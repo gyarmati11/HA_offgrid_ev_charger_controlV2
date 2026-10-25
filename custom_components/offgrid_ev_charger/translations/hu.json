@@ -1,0 +1,239 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Off-Grid EV töltő",
+        "description": "Add meg az inverter és a töltő entitásait.",
+        "data": {
+          "name": "Név",
+          "battery_soc": "Ház-akku SOC szenzor",
+          "battery_power": "Ház-akku teljesítmény szenzor",
+          "power_sign": "Akku teljesítmény előjele",
+          "charger_control": "Töltő indító/leállító entitás",
+          "start_option": "Indító opció (select esetén)",
+          "stop_option": "Leállító opció (select esetén)",
+          "charge_current": "Töltőáram entitás",
+          "plug_entity": "Autó csatlakozás entitás",
+          "plug_states": "„Csatlakoztatva” állapotok (vesszővel)",
+          "charger_power": "Töltő teljesítmény szenzor (opcionális)",
+          "charger_power_unit": "Töltő teljesítmény mértékegysége",
+          "ev_soc": "Autó SOC szenzor (opcionális)",
+          "notify_service": "Telefon értesítés szolgáltatás (opcionális)"
+        },
+        "data_description": {
+          "power_sign": "A jelenlegi kódod szerint: pozitív = merül.",
+          "plug_states": "Csak sensor esetén: mely állapotai jelentik, hogy az autó csatlakoztatva van.",
+          "charger_power": "Nélküle az áramból becsül, és az „autó tele” jelzés nem működik.",
+          "notify_service": "pl. notify.mobile_app_telefonom – ez kell a gombos kérdéshez csatlakoztatáskor."
+        }
+      }
+    },
+    "error": {
+      "invalid_option": "Az indító/leállító opció nem szerepel az entitás opciói között.",
+      "invalid_notify": "Nincs ilyen notify szolgáltatás."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Entitás beállítások",
+        "data": {
+          "battery_soc": "Ház-akku SOC szenzor",
+          "battery_power": "Ház-akku teljesítmény szenzor",
+          "power_sign": "Akku teljesítmény előjele",
+          "charger_control": "Töltő indító/leállító entitás",
+          "start_option": "Indító opció (select esetén)",
+          "stop_option": "Leállító opció (select esetén)",
+          "charge_current": "Töltőáram entitás",
+          "plug_entity": "Autó csatlakozás entitás",
+          "plug_states": "„Csatlakoztatva” állapotok (vesszővel)",
+          "charger_power": "Töltő teljesítmény szenzor (opcionális)",
+          "charger_power_unit": "Töltő teljesítmény mértékegysége",
+          "ev_soc": "Autó SOC szenzor (opcionális)",
+          "notify_service": "Telefon értesítés szolgáltatás (opcionális)"
+        },
+        "data_description": {
+          "power_sign": "A jelenlegi kódod szerint: pozitív = merül.",
+          "plug_states": "Csak sensor esetén: mely állapotai jelentik, hogy az autó csatlakoztatva van.",
+          "charger_power": "Nélküle az áramból becsül, és az „autó tele” jelzés nem működik.",
+          "notify_service": "pl. notify.mobile_app_telefonom – ez kell a gombos kérdéshez csatlakoztatáskor."
+        }
+      }
+    },
+    "error": {
+      "invalid_option": "Az indító/leállító opció nem szerepel az entitás opciói között.",
+      "invalid_notify": "Nincs ilyen notify szolgáltatás."
+    }
+  },
+  "selector": {
+    "power_sign": {
+      "options": {
+        "positive_discharge": "Pozitív = merül, negatív = töltődik",
+        "positive_charge": "Pozitív = töltődik, negatív = merül"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Állapot"
+      },
+      "charger_power": {
+        "name": "Töltési teljesítmény"
+      },
+      "energy_total": {
+        "name": "Energia összesen"
+      },
+      "energy_session": {
+        "name": "Energia alkalom"
+      },
+      "km_session": {
+        "name": "Megtehető km alkalom"
+      },
+      "savings_session": {
+        "name": "Megtakarítás alkalom"
+      },
+      "duration_session": {
+        "name": "Töltési idő alkalom"
+      },
+      "energy_day": {
+        "name": "Energia ma"
+      },
+      "km_day": {
+        "name": "Megtehető km ma"
+      },
+      "savings_day": {
+        "name": "Megtakarítás ma"
+      },
+      "duration_day": {
+        "name": "Töltési idő ma"
+      },
+      "energy_week": {
+        "name": "Energia e heti"
+      },
+      "km_week": {
+        "name": "Megtehető km e heti"
+      },
+      "savings_week": {
+        "name": "Megtakarítás e heti"
+      },
+      "duration_week": {
+        "name": "Töltési idő e heti"
+      },
+      "energy_month": {
+        "name": "Energia e havi"
+      },
+      "km_month": {
+        "name": "Megtehető km e havi"
+      },
+      "savings_month": {
+        "name": "Megtakarítás e havi"
+      },
+      "duration_month": {
+        "name": "Töltési idő e havi"
+      },
+      "energy_year": {
+        "name": "Energia idei"
+      },
+      "km_year": {
+        "name": "Megtehető km idei"
+      },
+      "savings_year": {
+        "name": "Megtakarítás idei"
+      },
+      "duration_year": {
+        "name": "Töltési idő idei"
+      }
+    },
+    "binary_sensor": {
+      "plugged": {
+        "name": "Autó csatlakoztatva"
+      },
+      "charging": {
+        "name": "Töltés folyamatban"
+      },
+      "car_full": {
+        "name": "Autó feltöltve"
+      },
+      "data_error": {
+        "name": "Adat hiba"
+      }
+    },
+    "number": {
+      "target_soc": {
+        "name": "Autó cél SOC"
+      },
+      "max_current": {
+        "name": "Max töltőáram"
+      },
+      "min_current": {
+        "name": "Min töltőáram"
+      },
+      "trickle_current": {
+        "name": "Csepptöltés áram"
+      },
+      "voltage": {
+        "name": "Hálózati feszültség"
+      },
+      "solar_start_soc": {
+        "name": "Szolár: indulás ház-akku SOC felett"
+      },
+      "solar_stop_soc": {
+        "name": "Szolár: leállás ház-akku SOC alatt"
+      },
+      "battery_full_soc": {
+        "name": "Ház-akku „tele” szint"
+      },
+      "solar_reserve": {
+        "name": "Szolár: akku töltés tartalék"
+      },
+      "solar_allowed_discharge": {
+        "name": "Szolár: megengedett merülés teli akkunál"
+      },
+      "protect_soc": {
+        "name": "Ház-akku védelmi szint"
+      },
+      "fast_min_soc": {
+        "name": "Gyors: leállás ház-akku SOC alatt"
+      },
+      "trickle_min_soc": {
+        "name": "Csepp: leállás ház-akku SOC alatt"
+      },
+      "max_battery_discharge": {
+        "name": "Max akku merülés (inverter/BMS)"
+      },
+      "question_timeout": {
+        "name": "Mód kérdés várakozás"
+      },
+      "ev_consumption": {
+        "name": "Autó fogyasztás"
+      },
+      "petrol_consumption": {
+        "name": "Benzines autó fogyasztás"
+      },
+      "petrol_price": {
+        "name": "Benzin ár"
+      },
+      "electricity_price": {
+        "name": "Villany ár"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Töltési mód",
+        "state": {
+          "solar": "☀️ Szolár (csak felesleg)",
+          "fast": "⚡ Gyors",
+          "trickle": "💧 Csepp",
+          "off": "⏸️ Kikapcsolva",
+          "manual": "🖐️ Kézi (nem vezérel)"
+        }
+      }
+    },
+    "button": {
+      "reset_statistics": {
+        "name": "Statisztika nullázása"
+      }
+    }
+  }
+}

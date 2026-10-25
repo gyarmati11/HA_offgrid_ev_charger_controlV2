@@ -1,0 +1,5 @@
+{
+  "name": "Off-Grid EV Charger",
+  "render_readme": true,
+  "homeassistant": "2024.11.0"
+}

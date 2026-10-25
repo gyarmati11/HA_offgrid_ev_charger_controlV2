@@ -1,0 +1,13 @@
+{
+  "domain": "offgrid_ev_charger",
+  "name": "Off-Grid EV Charger",
+  "codeowners": ["@gyarmati11"],
+  "config_flow": true,
+  "dependencies": ["persistent_notification"],
+  "documentation": "https://github.com/gyarmati11/HA_offgrid_ev_charger_control",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/gyarmati11/HA_offgrid_ev_charger_control/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

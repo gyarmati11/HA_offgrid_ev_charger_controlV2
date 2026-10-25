@@ -1,0 +1,239 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Off-Grid EV Charger",
+        "description": "Map your inverter and charger entities.",
+        "data": {
+          "name": "Name",
+          "battery_soc": "House battery SOC sensor",
+          "battery_power": "House battery power sensor",
+          "power_sign": "Battery power sign",
+          "charger_control": "Charger start/stop entity",
+          "start_option": "Start option (select)",
+          "stop_option": "Stop option (select)",
+          "charge_current": "Charging current entity",
+          "plug_entity": "Car connected entity",
+          "plug_states": "States meaning 'connected' (comma separated)",
+          "charger_power": "Charger power sensor (optional)",
+          "charger_power_unit": "Charger power unit",
+          "ev_soc": "Car SOC sensor (optional)",
+          "notify_service": "Mobile notify service (optional)"
+        },
+        "data_description": {
+          "power_sign": "Your current code: positive = discharging.",
+          "plug_states": "Only for a sensor: its state values that mean the car is connected.",
+          "charger_power": "Without it the power is estimated from the current and 'car full' detection is off.",
+          "notify_service": "e.g. notify.mobile_app_my_phone – required for the plug-in question with buttons."
+        }
+      }
+    },
+    "error": {
+      "invalid_option": "The start/stop option is not among the entity's options.",
+      "invalid_notify": "This notify service does not exist."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Entity settings",
+        "data": {
+          "battery_soc": "House battery SOC sensor",
+          "battery_power": "House battery power sensor",
+          "power_sign": "Battery power sign",
+          "charger_control": "Charger start/stop entity",
+          "start_option": "Start option (select)",
+          "stop_option": "Stop option (select)",
+          "charge_current": "Charging current entity",
+          "plug_entity": "Car connected entity",
+          "plug_states": "States meaning 'connected' (comma separated)",
+          "charger_power": "Charger power sensor (optional)",
+          "charger_power_unit": "Charger power unit",
+          "ev_soc": "Car SOC sensor (optional)",
+          "notify_service": "Mobile notify service (optional)"
+        },
+        "data_description": {
+          "power_sign": "Your current code: positive = discharging.",
+          "plug_states": "Only for a sensor: its state values that mean the car is connected.",
+          "charger_power": "Without it the power is estimated from the current and 'car full' detection is off.",
+          "notify_service": "e.g. notify.mobile_app_my_phone – required for the plug-in question with buttons."
+        }
+      }
+    },
+    "error": {
+      "invalid_option": "The start/stop option is not among the entity's options.",
+      "invalid_notify": "This notify service does not exist."
+    }
+  },
+  "selector": {
+    "power_sign": {
+      "options": {
+        "positive_discharge": "Positive = discharging, negative = charging",
+        "positive_charge": "Positive = charging, negative = discharging"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Status"
+      },
+      "charger_power": {
+        "name": "Charging power"
+      },
+      "energy_total": {
+        "name": "Energy total"
+      },
+      "energy_session": {
+        "name": "Energy session"
+      },
+      "km_session": {
+        "name": "Range session"
+      },
+      "savings_session": {
+        "name": "Savings session"
+      },
+      "duration_session": {
+        "name": "Charging time session"
+      },
+      "energy_day": {
+        "name": "Energy today"
+      },
+      "km_day": {
+        "name": "Range today"
+      },
+      "savings_day": {
+        "name": "Savings today"
+      },
+      "duration_day": {
+        "name": "Charging time today"
+      },
+      "energy_week": {
+        "name": "Energy this week"
+      },
+      "km_week": {
+        "name": "Range this week"
+      },
+      "savings_week": {
+        "name": "Savings this week"
+      },
+      "duration_week": {
+        "name": "Charging time this week"
+      },
+      "energy_month": {
+        "name": "Energy this month"
+      },
+      "km_month": {
+        "name": "Range this month"
+      },
+      "savings_month": {
+        "name": "Savings this month"
+      },
+      "duration_month": {
+        "name": "Charging time this month"
+      },
+      "energy_year": {
+        "name": "Energy this year"
+      },
+      "km_year": {
+        "name": "Range this year"
+      },
+      "savings_year": {
+        "name": "Savings this year"
+      },
+      "duration_year": {
+        "name": "Charging time this year"
+      }
+    },
+    "binary_sensor": {
+      "plugged": {
+        "name": "Car plugged in"
+      },
+      "charging": {
+        "name": "Charging"
+      },
+      "car_full": {
+        "name": "Car full"
+      },
+      "data_error": {
+        "name": "Data error"
+      }
+    },
+    "number": {
+      "target_soc": {
+        "name": "Target car SOC"
+      },
+      "max_current": {
+        "name": "Max charging current"
+      },
+      "min_current": {
+        "name": "Min charging current"
+      },
+      "trickle_current": {
+        "name": "Trickle current"
+      },
+      "voltage": {
+        "name": "Grid voltage"
+      },
+      "solar_start_soc": {
+        "name": "Solar: start above battery SOC"
+      },
+      "solar_stop_soc": {
+        "name": "Solar: stop below battery SOC"
+      },
+      "battery_full_soc": {
+        "name": "Battery 'full' level"
+      },
+      "solar_reserve": {
+        "name": "Solar: battery charge reserve"
+      },
+      "solar_allowed_discharge": {
+        "name": "Solar: allowed discharge when full"
+      },
+      "protect_soc": {
+        "name": "Battery protection level"
+      },
+      "fast_min_soc": {
+        "name": "Fast: stop below battery SOC"
+      },
+      "trickle_min_soc": {
+        "name": "Trickle: stop below battery SOC"
+      },
+      "max_battery_discharge": {
+        "name": "Max battery discharge"
+      },
+      "question_timeout": {
+        "name": "Mode question timeout"
+      },
+      "ev_consumption": {
+        "name": "EV consumption"
+      },
+      "petrol_consumption": {
+        "name": "Petrol car consumption"
+      },
+      "petrol_price": {
+        "name": "Petrol price"
+      },
+      "electricity_price": {
+        "name": "Electricity price"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Charging mode",
+        "state": {
+          "solar": "Solar surplus",
+          "fast": "Fast",
+          "trickle": "Trickle",
+          "off": "Off",
+          "manual": "Manual (no control)"
+        }
+      }
+    },
+    "button": {
+      "reset_statistics": {
+        "name": "Reset statistics"
+      }
+    }
+  }
+}
