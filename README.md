@@ -60,7 +60,21 @@ Az entitások később módosíthatók: integráció → **Konfigurálás**.
 | `number.ogev_*` | Paraméterek |
 | `button.ogev_reset_statistics` | Statisztika nullázása |
 
-Kész dashboard kártya: [`dashboard_kartya.yaml`](dashboard_kartya.yaml).
+## Lovelace kártya
+
+Az integráció a saját kártyáját **automatikusan betölti**, külön telepíteni nem kell.
+Dashboard → Szerkesztés → **Kártya hozzáadása** → keresd: „Off-Grid EV töltés”. Vagy manuálisan:
+
+```yaml
+type: custom:offgrid-ev-card
+```
+
+A kártyán látszik: autó töltöttsége gyűrűben a céllal, aktuális állapot és teljesítmény, ház-akku → autó energiaáramlás,
+egy érintéses módválasztó, az aktuális töltés és a napi/heti/havi/éves statisztika (kWh, km, idő, megtakarítás),
+cél töltöttség csúszka, valamint figyelmeztetések (módválasztás visszaszámlálással, hiányzó adat, autó feltöltve).
+Világos és sötét témával, telefonon is működik.
+
+> Ha a kártya frissítés után nem jelenik meg, frissítsd a böngészőt (mobil appban: Beállítások → Companion app → Gyorsítótár ürítése).
 
 ## Működési sorrend (prioritás)
 

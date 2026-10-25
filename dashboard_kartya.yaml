@@ -1,61 +1,6 @@
-# Dashboard → Szerkesztés → Kártya hozzáadása → Manuális → ezt beilleszteni
-type: vertical-stack
-cards:
-  - type: markdown
-    content: |
-      ### {{ states('sensor.ogev_status') }}
-      **Ház-akku:** {{ states('sensor.akkumulator_soc') | round(0) }}% · {{ states('sensor.akkumulator_teljesitmeny') }} W
-      **Autó:** ~{{ states('sensor.ev_becsult_soc') }}% / {{ states('number.ogev_target_soc') | int(0) }}% · {{ states('sensor.ogev_charger_power') | int(0) }} W · {{ states('number.ev_charger_set_charge_current') }} A
-      **Ez az alkalom:** {{ states('sensor.ogev_energy_session') | float(0) | round(2) }} kWh · ~{{ states('sensor.ogev_km_session') | float(0) | round(0) }} km · {{ state_attr('sensor.ogev_duration_session', 'formatted') }} · {{ states('sensor.ogev_savings_session') | float(0) | round(0) }} Ft
-  - type: tile
-    entity: select.ogev_mode
-    name: Töltési mód
-    features:
-      - type: select-options
-  - type: tile
-    entity: number.ogev_target_soc
-    name: Autó cél SOC
-    features:
-      - type: numeric-input
-        style: slider
-  - type: markdown
-    title: Statisztika
-    content: |
-      | | Ma | Hét | Hónap | Év |
-      |---|---:|---:|---:|---:|
-      | kWh | {{ states('sensor.ogev_energy_day')|float(0)|round(1) }} | {{ states('sensor.ogev_energy_week')|float(0)|round(1) }} | {{ states('sensor.ogev_energy_month')|float(0)|round(1) }} | {{ states('sensor.ogev_energy_year')|float(0)|round(0) }} |
-      | km | {{ states('sensor.ogev_km_day')|float(0)|round(0) }} | {{ states('sensor.ogev_km_week')|float(0)|round(0) }} | {{ states('sensor.ogev_km_month')|float(0)|round(0) }} | {{ states('sensor.ogev_km_year')|float(0)|round(0) }} |
-      | Ft | {{ states('sensor.ogev_savings_day')|float(0)|round(0) }} | {{ states('sensor.ogev_savings_week')|float(0)|round(0) }} | {{ states('sensor.ogev_savings_month')|float(0)|round(0) }} | {{ states('sensor.ogev_savings_year')|float(0)|round(0) }} |
-      | idő | {{ state_attr('sensor.ogev_duration_day','formatted') }} | {{ state_attr('sensor.ogev_duration_week','formatted') }} | {{ state_attr('sensor.ogev_duration_month','formatted') }} | {{ state_attr('sensor.ogev_duration_year','formatted') }} |
-  - type: entities
-    title: Beállítások
-    state_color: true
-    entities:
-      - type: section
-        label: Töltő
-      - number.ogev_max_current
-      - number.ogev_min_current
-      - number.ogev_trickle_current
-      - number.ogev_voltage
-      - number.ogev_question_timeout
-      - type: section
-        label: Szolár mód
-      - number.ogev_solar_start_soc
-      - number.ogev_solar_stop_soc
-      - number.ogev_battery_full_soc
-      - number.ogev_solar_reserve
-      - number.ogev_solar_allowed_discharge
-      - type: section
-        label: Védelem
-      - number.ogev_protect_soc
-      - number.ogev_fast_min_soc
-      - number.ogev_trickle_min_soc
-      - number.ogev_max_battery_discharge
-      - binary_sensor.ogev_data_error
-      - type: section
-        label: Megtakarítás számítás
-      - number.ogev_ev_consumption
-      - number.ogev_petrol_consumption
-      - number.ogev_petrol_price
-      - number.ogev_electricity_price
-      - button.ogev_reset_statistics
+# Az integráció telepítése után a kártya automatikusan elérhető:
+# Dashboard → Szerkesztés → Kártya hozzáadása → "Off-Grid EV töltés"
+# vagy Manuális kártyaként ez az egy sor:
+type: custom:offgrid-ev-card
+# title: Autótöltés     # opcionális cím
+# prefix: ogev          # csak ha több töltőt kezelsz (pl. ogev_2)

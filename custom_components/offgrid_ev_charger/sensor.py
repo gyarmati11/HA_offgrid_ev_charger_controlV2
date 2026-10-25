@@ -60,6 +60,8 @@ class StatusSensor(OGEVEntity, SensorEntity):
             "question_pending": c.question_pending,
             "power_estimated": c.power_estimated,
             "missing_entities": c.missing,
+            "question_deadline": c.question_deadline.isoformat() if c.question_deadline else None,
+            **c.readings,
         }
 
 

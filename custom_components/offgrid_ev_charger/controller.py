@@ -109,6 +109,8 @@ class EVChargeController:
         self.missing: list[str] = []
         self.target_current: int | None = None
         self.question_pending = False
+        self.question_deadline: datetime | None = None
+        self.readings: dict[str, Any] = {}
 
         self._unsubs: list[CALLBACK_TYPE] = []
         self._lock = asyncio.Lock()
@@ -403,6 +405,7 @@ class EVChargeController:
             for m in QUESTION_MODES
         ]
         self.question_pending = True
+        self.question_deadline = dt_util.utcnow() + timedelta(minutes=timeout)
         await self._notify("🔌 Autó csatlakoztatva", msg, "question", actions)
         if self._question_timer:
             self._question_timer()
@@ -421,6 +424,7 @@ class EVChargeController:
 
     async def _close_question(self) -> None:
         self.question_pending = False
+        self.question_deadline = None
         if self._question_timer:
             self._question_timer()
             self._question_timer = None
@@ -557,6 +561,13 @@ class EVChargeController:
         enabled = self._charger_enabled(ctrl)
         current = int(round(cur)) if cur is not None else int(P["min_current"])
         ev_soc = self._num(cfg.get(CONF_EV_SOC))
+        self.readings = {
+            "battery_soc": soc,
+            "battery_power": p,
+            "ev_soc": ev_soc,
+            "charge_current": cur,
+            "charger_enabled": enabled,
+        }
 
         # --- charger power (measured or estimated)
         cp = self._num(cfg.get(CONF_CHARGER_POWER))
