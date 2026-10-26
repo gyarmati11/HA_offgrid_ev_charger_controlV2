@@ -51,6 +51,7 @@ SOLAR_SHORTAGE_DELAY = 120     # s – at min current still no surplus → stop
 SOLAR_RESTART_DELAY = 300      # s – pause before solar restarts
 UNPLUG_DELAY = 30              # s – debounce for unplugging
 CHARGING_THRESHOLD_W = 100     # W – above this the car is really charging
+CHARGER_OFFLINE_NOTIFY_MIN = 5  # min – charger offline while it should charge → notify
 SOC_HYSTERESIS = 5             # % – restart margin for fast / trickle
 
 EVENT_NOTIFICATION_ACTION = "mobile_app_notification_action"

@@ -6,7 +6,7 @@
  *   prefix: ogev          # optional, auto-detected
  *   title: Autótöltés     # optional
  */
-const CARD_VERSION = "1.1.0";
+const CARD_VERSION = "1.1.1";
 
 const MODES = [
   { id: "solar", label: "Szolár", icon: "mdi:solar-power-variant", color: "#F5A524", hint: "csak napelem-felesleg" },
@@ -139,6 +139,7 @@ class OffgridEvCard extends HTMLElement {
       question: !!a.question_pending,
       deadline: a.question_deadline || null,
       missing: a.missing_entities || [],
+      offline: !!a.charger_offline,
       battSoc: num(a.battery_soc),
       battPower: num(a.battery_power),
       evSoc: num(a.ev_soc),
@@ -237,6 +238,7 @@ class OffgridEvCard extends HTMLElement {
 
   _headline(d, mode) {
     if (d.error) return "Töltés biztonsági okból leállítva";
+    if (d.offline) return "A töltő nem elérhető";
     if (d.full) return "Az autó feltöltött";
     if (d.charging && !d.error) {
       return { solar: "Töltés napenergiából", fast: "Gyorstöltés", trickle: "Csepptöltés", manual: "Töltés (kézi)" }[mode.id] || "Töltés";
@@ -247,7 +249,10 @@ class OffgridEvCard extends HTMLElement {
   _banner(d) {
     if (d.error)
       return `<div class="banner err"><ha-icon icon="mdi:alert-circle"></ha-icon>
-        <div><b>Hiányzó adat – a töltés biztonsági okból leállt.</b><br>${esc(d.missing.join(", "))}</div></div>`;
+        <div><b>Hiányzó ház-akku adat – a töltés biztonsági okból leállt.</b><br>${esc(d.missing.join(", "))}</div></div>`;
+    if (d.offline)
+      return `<div class="banner warn"><ha-icon icon="mdi:access-point-network-off"></ha-icon>
+        <div><b>A töltő jelenleg nem érhető el.</b><br>Amint visszajön, a vezérlés automatikusan folytatódik.</div></div>`;
     if (d.question)
       return `<div class="banner ask"><ha-icon icon="mdi:help-circle"></ha-icon>
         <div><b>Autó csatlakoztatva – válassz módot!</b><br>
@@ -459,6 +464,8 @@ const STYLE = `<style>
   .banner ha-icon { --mdc-icon-size:22px; flex:none; margin-top:1px; }
   .banner.err { background:color-mix(in srgb, var(--error-color, #db4437) 13%, transparent); }
   .banner.err ha-icon { color:var(--error-color, #db4437); }
+  .banner.warn { background:color-mix(in srgb, var(--warning-color, #ffa600) 14%, transparent); }
+  .banner.warn ha-icon { color:var(--warning-color, #ffa600); }
   .banner.ask { background:color-mix(in srgb, var(--primary-color) 13%, transparent); }
   .banner.ask ha-icon { color:var(--primary-color); }
   .banner.ok { background:color-mix(in srgb, var(--success-color, #43a047) 13%, transparent); }

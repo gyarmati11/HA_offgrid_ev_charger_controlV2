@@ -87,3 +87,12 @@ Világos és sötét témával, telefonon is működik.
 7. A választott mód logikája (Csepp / Gyors / Szolár)
 
 A Gyors és Csepp mód 5% hiszterézissel indul újra, hogy ne kapcsolgasson a határon.
+
+## Változások
+
+**1.1.1**
+- Javítva: leállítás után a töltő „unknown” áramerősséget jelzett, amit a vezérlő hiányzó adatnak vett. Leállításkor már nem küld áramerősséget, indítás előtt viszont mindig beállítja.
+- A töltő átmeneti elérhetetlensége már nem „hiányzó adat” hiba: a kártyán sárga jelzés jelenik meg, értesítés csak akkor jön, ha töltenie kellene, és 5 percnél tovább nem elérhető.
+- Biztonsági leállás és piros hibaértesítés csak a ház-akku adatainak (SOC, teljesítmény) hiánya esetén.
+
+**1.1.0** – Saját Lovelace kártya (`custom:offgrid-ev-card`), automatikus betöltéssel.

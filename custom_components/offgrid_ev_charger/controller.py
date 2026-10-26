@@ -23,6 +23,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     ACTION_PREFIX,
     CAR_FULL_DELAY,
+    CHARGER_OFFLINE_NOTIFY_MIN,
     CHARGING_THRESHOLD_W,
     CONF_BATTERY_POWER,
     CONF_BATTERY_SOC,
@@ -120,6 +121,14 @@ class EVChargeController:
         self._full_since: datetime | None = None
         self._short_since: datetime | None = None
         self._last_stop: datetime | None = None
+        self._last_current: int | None = None
+        self._sent_current: int | None = None
+        self._cmd_enabled = False
+        self._want_charge = False
+        self._offline_since: datetime | None = None
+        self._offline_notified = False
+        self.charger_offline = False
+        self.charger_missing: list[str] = []
         self._unplug_timer: CALLBACK_TYPE | None = None
         self._question_timer: CALLBACK_TYPE | None = None
 
@@ -526,13 +535,21 @@ class EVChargeController:
         cur = self._num(cfg[CONF_CURRENT])
         plug_raw = self._raw_plugged()
 
+        # Critical: only the house battery data. Without it we cannot protect the battery.
         missing = [
             eid
             for eid, ok in (
                 (cfg[CONF_BATTERY_SOC], soc is not None),
                 (cfg[CONF_BATTERY_POWER], p_raw is not None),
+            )
+            if not ok
+        ]
+        # Charger side: many chargers report "unknown" current while stopped or drop
+        # off Wi-Fi when idle. That is not dangerous – we simply cannot command them.
+        self.charger_missing = [
+            eid
+            for eid, ok in (
                 (cfg[CONF_CONTROL], ctrl is not None),
-                (cfg[CONF_CURRENT], cur is not None),
                 (cfg[CONF_PLUG], plug_raw is not None),
             )
             if not ok
@@ -546,7 +563,7 @@ class EVChargeController:
             error = False
         if error and not self.data_error:
             await self._notify(
-                "⚠️ EV töltés – hiányzó adat",
+                "⚠️ EV töltés – hiányzó ház-akku adat",
                 f"Nem elérhető: {', '.join(missing)}. A töltés biztonsági okból leállt, "
                 "az adatok visszatérésekor automatikusan folytatódik.",
                 "error",
@@ -558,33 +575,51 @@ class EVChargeController:
         p = None
         if p_raw is not None:
             p = -p_raw if cfg.get(CONF_POWER_SIGN) == SIGN_POS_CHARGE else p_raw
-        enabled = self._charger_enabled(ctrl)
-        current = int(round(cur)) if cur is not None else int(P["min_current"])
+
+        # Current: fall back to the last known / last commanded value when unknown.
+        if cur is not None:
+            current = int(round(cur))
+            self._last_current = current
+        else:
+            current = int(self._last_current or P["min_current"])
+
+        # Measured charger power (needed below to guess the on/off state if unknown)
+        cp_meas = self._num(cfg.get(CONF_CHARGER_POWER))
+        if cp_meas is not None and cfg.get(CONF_CHARGER_POWER_UNIT) == "kW":
+            cp_meas *= 1000
+
+        if ctrl is not None:
+            enabled = self._charger_enabled(ctrl)
+        elif cp_meas is not None and cp_meas > CHARGING_THRESHOLD_W:
+            enabled = True
+        else:
+            enabled = self._cmd_enabled
         ev_soc = self._num(cfg.get(CONF_EV_SOC))
+
+        # --- charger power (measured or estimated)
+        if cp_meas is not None:
+            cp = cp_meas
+            self.power_estimated = False
+        else:
+            self.power_estimated = True
+            cp = current * P["voltage"] if (enabled and self.plugged and ctrl is not None) else 0.0
+        self.charger_power = float(max(round(cp), 0))
+        self.charging = self.charger_power > CHARGING_THRESHOLD_W
+
         self.readings = {
             "battery_soc": soc,
             "battery_power": p,
             "ev_soc": ev_soc,
-            "charge_current": cur,
+            "charge_current": current if (cur is not None or enabled) else None,
+            "charge_current_known": cur is not None,
             "charger_enabled": enabled,
         }
-
-        # --- charger power (measured or estimated)
-        cp = self._num(cfg.get(CONF_CHARGER_POWER))
-        if cp is not None:
-            if cfg.get(CONF_CHARGER_POWER_UNIT) == "kW":
-                cp *= 1000
-            self.power_estimated = False
-        else:
-            self.power_estimated = True
-            cp = current * P["voltage"] if (enabled and self.plugged) else 0.0
-        self.charger_power = float(max(round(cp), 0))
-        self.charging = self.charger_power > CHARGING_THRESHOLD_W
 
         # --- car full: enabled, plugged, measured power below threshold for 5 min
         if (
             self.plugged
             and enabled
+            and ctrl is not None
             and not self.power_estimated
             and self.charger_power < CHARGING_THRESHOLD_W
         ):
@@ -606,23 +641,72 @@ class EVChargeController:
         self.car_full = full
 
         if missing and not error:
-            self.status = f"⏳ Adatra várakozás: {', '.join(missing)}"[:255]
+            self.status = f"⏳ Ház-akku adatra várakozás: {', '.join(missing)}"[:255]
             self._update()
             return
 
+        # --- charger unreachable: nothing to command, wait for it
+        if ctrl is None:
+            self._offline_since = self._offline_since or now
+            mins = int((now - self._offline_since).total_seconds() // 60)
+            self.charger_offline = True
+            if (
+                self._want_charge
+                and self.plugged
+                and mins >= CHARGER_OFFLINE_NOTIFY_MIN
+                and not self._offline_notified
+            ):
+                self._offline_notified = True
+                await self._notify(
+                    "📡 EV töltő nem elérhető",
+                    f"A töltő {mins} perce nem érhető el ({cfg[CONF_CONTROL]}), "
+                    "pedig töltenie kellene. Visszatéréskor automatikusan folytatódik.",
+                    "offline",
+                )
+            self.status = (
+                "📡 Töltő nem elérhető"
+                + (f" ({mins} perce)" if mins else "")
+                + " – visszatéréskor folytatódik"
+            )
+            self.target_current = None
+            self._update()
+            return
+        if self.charger_offline:
+            self.charger_offline = False
+            self._offline_since = None
+            if self._offline_notified:
+                self._offline_notified = False
+                await self._clear("offline")
+            self._sent_current = None  # charger may have restarted: resend
+
         enable, amps, msg = self._plan(now, error, soc, p, enabled, current, ev_soc, ctrl)
+        if enable is not None:
+            self._want_charge = enable
 
         if enable is True:
-            if amps is not None and amps != current:
+            if amps is not None and (
+                (cur is not None and amps != current)
+                or (cur is None and amps != self._sent_current)
+            ):
                 await self._set_current(amps)
+                self._sent_current = amps
+                self._last_current = amps
             if not enabled:
+                if amps is not None and self._sent_current is None:
+                    # make sure the charger starts with a defined current
+                    await self._set_current(amps)
+                    self._sent_current = amps
+                    self._last_current = amps
                 await self._set_enabled(True)
+            self._cmd_enabled = True
         elif enable is False:
             if enabled:
                 await self._set_enabled(False)
                 self._last_stop = now
-            if amps is not None and cur is not None and amps != current:
-                await self._set_current(amps)
+            # Do NOT touch the current while stopped – several chargers reject it
+            # and report "unknown" afterwards. It is set again right before start.
+            self._cmd_enabled = False
+            self._sent_current = None
 
         self.target_current = amps if enable else None
         self.status = msg[:255]
