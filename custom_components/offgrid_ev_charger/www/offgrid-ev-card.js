@@ -6,12 +6,12 @@
  *   prefix: ogev          # optional, auto-detected
  *   title: Autótöltés     # optional
  */
-const CARD_VERSION = "1.1.1";
+const CARD_VERSION = "1.3.0";
 
 const MODES = [
   { id: "solar", label: "Szolár", icon: "mdi:solar-power-variant", color: "#F5A524", hint: "csak napelem-felesleg" },
-  { id: "fast", label: "Gyors", icon: "mdi:lightning-bolt", color: "#3D7BF7", hint: "a lehető leggyorsabban" },
-  { id: "trickle", label: "Csepp", icon: "mdi:water", color: "#14B8A6", hint: "alacsony áram" },
+  { id: "fast", label: "Gyors", icon: "mdi:lightning-bolt", color: "#3D7BF7", hint: "max áram; hálózaton a korlát alatt" },
+  { id: "trickle", label: "Csepp", icon: "mdi:water", color: "#14B8A6", hint: "alacsony áram, ház-akkutól függetlenül" },
   { id: "off", label: "Ki", icon: "mdi:pause", color: "#8E8E93", hint: "nem tölt" },
 ];
 const MANUAL = { id: "manual", label: "Kézi", icon: "mdi:hand-back-right", color: "#8E8E93", hint: "nincs vezérlés" };
@@ -35,6 +35,20 @@ const fmt = (v, digits = 0) =>
 const kwh = (v) => (v === null ? "–" : fmt(v, v < 10 ? 2 : 1));
 const kw = (w) => (w === null ? "–" : Math.abs(w) < 1000 ? `${fmt(w)} W` : `${fmt(w / 1000, 2)} kW`);
 const money = (v) => (v === null ? "–" : Math.abs(v) >= 100000 ? `${fmt(v / 1000, 0)} e` : fmt(v));
+const ago = (iso) => {
+  const t = iso ? new Date(iso) : null;
+  if (!t || isNaN(t)) return null;
+  const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+  if (m < 1) return "most";
+  if (m < 60) return `${m} perce`;
+  if (m < 48 * 60) return `${Math.round(m / 60)} órája`;
+  return `${Math.round(m / 1440)} napja`;
+};
+const hm = (iso) => {
+  const t = iso ? new Date(iso) : null;
+  return t && !isNaN(t) ? t.toLocaleTimeString("hu-HU", { hour: "2-digit", minute: "2-digit" }) : "";
+};
+const dur = (min) => (min === null ? "" : `${Math.floor(min / 60)} ó ${String(Math.round(min % 60)).padStart(2, "0")} p`);
 const stripEmoji = (s) => String(s || "").replace(/^[^\p{L}\p{N}]+/u, "");
 
 class OffgridEvCard extends HTMLElement {
@@ -142,6 +156,9 @@ class OffgridEvCard extends HTMLElement {
       offline: !!a.charger_offline,
       battSoc: num(a.battery_soc),
       battPower: num(a.battery_power),
+      onGrid: a.on_grid === true,
+      gridPower: num(a.grid_power),
+      gridLimit: num(a.grid_limit),
       evSoc: num(a.ev_soc),
       current: num(a.charge_current),
       power: this._val("sensor", "charger_power"),
@@ -152,6 +169,18 @@ class OffgridEvCard extends HTMLElement {
       full: this._st("binary_sensor", "car_full")?.state === "on",
       error: this._st("binary_sensor", "data_error")?.state === "on",
       sessionStart: this._st("sensor", "energy_session")?.attributes?.last_reset || null,
+      car: a.car || {},
+      range: num(a.ev_range),
+      rangeTarget: num(a.range_at_target),
+      toTarget: num(a.energy_to_target),
+      minutes: num(a.minutes_to_target),
+      finishAt: a.finish_at || null,
+      stale: !!a.ev_soc_stale,
+      depOn: !!a.departure_on,
+      depTime: a.departure_time || "07:00",
+      boost: !!a.boost_active,
+      depSwitch: a.entity_departure_on || this._id("switch", "departure_enabled"),
+      depTimeEnt: a.entity_departure_time || this._id("time", "departure_time"),
       currency: unit === "HUF" ? "Ft" : unit,
       stats,
     };
@@ -176,6 +205,7 @@ class OffgridEvCard extends HTMLElement {
     const mode = MODES.find((m) => m.id === d.mode) || (d.mode === "manual" ? MANUAL : MODES[0]);
     const accent = d.plugged ? mode.color : "var(--disabled-text-color, #9e9e9e)";
     const title = this._config.title;
+    this._d = d;
 
     this.shadowRoot.innerHTML = `${STYLE}
       <ha-card style="--accent:${accent}">
@@ -184,8 +214,9 @@ class OffgridEvCard extends HTMLElement {
         ${this._banner(d)}
         ${this._flow(d)}
         ${this._modes(d)}
-        ${this._session(d)}
         ${this._target(d)}
+        ${this._car(d)}
+        ${this._session(d)}
         ${this._history(d)}
         <div class="footer">
           <button class="link" data-action="settings"><ha-icon icon="mdi:cog-outline"></ha-icon>Beállítások</button>
@@ -208,7 +239,7 @@ class OffgridEvCard extends HTMLElement {
     }
     const center =
       soc !== null
-        ? `<div class="big">${fmt(soc)}<span>%</span></div><div class="small">cél ${fmt(d.target)}%</div>`
+        ? `<div class="big">${fmt(soc)}<span>%</span></div><div class="small">${d.range !== null ? `≈ ${fmt(d.range)} km` : `cél ${fmt(d.target)}%`}</div>`
         : `<ha-icon icon="mdi:car-electric"></ha-icon>`;
 
     let sub;
@@ -240,6 +271,8 @@ class OffgridEvCard extends HTMLElement {
     if (d.error) return "Töltés biztonsági okból leállítva";
     if (d.offline) return "A töltő nem elérhető";
     if (d.full) return "Az autó feltöltött";
+    if (d.charging && !d.error && d.boost) return "Gyorstöltés az indulásig";
+    if (d.charging && d.onGrid && (d.mode === "fast" || d.boost)) return "Gyorstöltés hálózatról";
     if (d.charging && !d.error) {
       return { solar: "Töltés napenergiából", fast: "Gyorstöltés", trickle: "Csepptöltés", manual: "Töltés (kézi)" }[mode.id] || "Töltés";
     }
@@ -274,14 +307,22 @@ class OffgridEvCard extends HTMLElement {
       else bSub = `töltődik ${kw(-d.battPower)}`;
     }
     const cls = d.battPower !== null && d.battPower > 50 ? "neg" : d.battPower !== null && d.battPower < -50 ? "pos" : "";
-    return `
-      <div class="flow">
-        <div class="node">
+    const left = d.onGrid
+      ? `<div class="node">
+          <div class="nicon grid"><ha-icon icon="mdi:transmission-tower"></ha-icon></div>
+          <div class="ntext"><div class="nlabel">Hálózat</div>
+            <div class="nval">${d.gridPower === null ? "–" : kw(d.gridPower)}</div>
+            <div class="nsub ${d.gridLimit && d.gridPower > d.gridLimit * 0.95 ? "neg" : ""}">${d.gridLimit ? `korlát ${kw(d.gridLimit)}` : "&nbsp;"}${soc !== null ? ` · akku ${fmt(soc)}%` : ""}</div></div>
+        </div>`
+      : `<div class="node">
           <div class="nicon"><ha-icon icon="${bIcon}"></ha-icon></div>
           <div class="ntext"><div class="nlabel">Ház-akku</div>
             <div class="nval">${soc === null ? "–" : `${fmt(soc)}%`}</div>
             <div class="nsub ${cls}">${bSub}</div></div>
-        </div>
+        </div>`;
+    return `
+      <div class="flow">
+        ${left}
         <div class="line ${d.charging ? "live" : ""}"><span>${d.charging ? kw(d.power) : ""}</span></div>
         <div class="node right">
           <div class="ntext"><div class="nlabel">Autó</div>
@@ -332,12 +373,65 @@ class OffgridEvCard extends HTMLElement {
 
   _target(d) {
     if (d.target === null) return "";
+    let info = "";
+    if (d.plugged && d.evSoc !== null) {
+      if (d.toTarget !== null && d.toTarget <= 0.05) info = `<ha-icon icon="mdi:check-circle"></ha-icon>A cél elérve`;
+      else if (d.toTarget !== null) {
+        info = `<ha-icon icon="mdi:battery-arrow-up"></ha-icon>Még <b>${fmt(d.toTarget, 1)} kWh</b>`;
+        if (d.minutes !== null) info += ` · kész kb. <b>${hm(d.finishAt)}</b> (${dur(d.minutes)})`;
+      }
+    }
+    const depHint = d.boost
+      ? "Gyorsít, hogy időre kész legyen"
+      : d.depOn
+        ? "Ha kell, gyorsít az indulásig"
+        : "Kikapcsolva";
     return `
       <div class="section target">
-        <div class="head"><span>Cél töltöttség</span><span class="tval">${fmt(d.target)}%</span></div>
+        <div class="head"><span>Meddig töltse?</span>
+          <span class="tval"><span class="tnum">${fmt(d.target)}%</span>${d.rangeTarget !== null ? `<span class="tkm"> ≈ ${fmt(d.rangeTarget)} km</span>` : ""}</span></div>
         <input type="range" min="${d.targetMin}" max="${d.targetMax}" step="5" value="${d.target}"
           style="--p:${((d.target - d.targetMin) / (d.targetMax - d.targetMin)) * 100}%" data-action="target">
         <div class="scale"><span>${d.targetMin}%</span><span>${d.evSoc !== null ? `most ~${fmt(d.evSoc)}%` : ""}</span><span>${d.targetMax}%</span></div>
+        ${info ? `<div class="eta">${info}</div>` : ""}
+        <div class="dep ${d.boost ? "boost" : ""}">
+          <ha-icon icon="${d.boost ? "mdi:clock-fast" : "mdi:clock-outline"}"></ha-icon>
+          <div class="dtext"><div class="dlabel">Indulásra kész</div><div class="dhint">${depHint}</div></div>
+          <input type="time" value="${esc(d.depTime)}" data-action="deptime" ${d.depOn ? "" : 'class="dim"'}>
+          <button class="toggle ${d.depOn ? "on" : ""}" data-action="depon" aria-label="Indulásra kész"><span></span></button>
+        </div>
+      </div>`;
+  }
+
+  _car(d) {
+    const c = d.car;
+    if (!c.configured) return "";
+    const upd = ago(c.updated);
+    const sub = !c.found
+      ? "Az OpenCARWINGS entitások nem találhatók"
+      : d.stale
+        ? "Régi adat – frissítés folyamatban…"
+        : upd
+          ? `frissítve ${upd}`
+          : "";
+    const tile = (icon, val, unit, label) =>
+      `<div class="tile"><ha-icon icon="${icon}"></ha-icon><div class="tv">${val}${unit && val !== "–" ? `<small> ${unit}</small>` : ""}</div><div class="tl">${label}</div></div>`;
+    const acBtn = c.ac_entity
+      ? `<button class="pill ${c.ac_on ? "on" : ""}" data-action="ac"><ha-icon icon="mdi:fan"></ha-icon>Klíma ${c.ac_on ? "be" : "ki"}</button>`
+      : "";
+    return `
+      <div class="section">
+        <div class="head"><span>Autó</span><span class="muted ${d.stale ? "warn" : ""}">${esc(sub)}</span></div>
+        <div class="tiles compact">
+          ${tile("mdi:map-marker-distance", fmt(c.range_acoff), "km", "hatótáv")}
+          ${tile("mdi:air-conditioner", fmt(c.range_acon), "km", "klímával")}
+          ${tile("mdi:battery-heart-variant", fmt(c.soh), "%", "akku állapot")}
+          ${tile("mdi:thermometer", c.cabin_temp === null || c.cabin_temp === undefined ? "–" : fmt(c.cabin_temp), "°C", "utastér")}
+        </div>
+        <div class="actions">
+          <button class="pill" data-action="refresh"><ha-icon icon="mdi:refresh"></ha-icon>Adatok frissítése</button>
+          ${acBtn}
+        </div>
       </div>`;
   }
 
@@ -361,8 +455,11 @@ class OffgridEvCard extends HTMLElement {
         const update = () => {
           const v = Number(el.value);
           el.style.setProperty("--p", `${((v - el.min) / (el.max - el.min)) * 100}%`);
-          const out = root.querySelector(".tval");
+          const out = root.querySelector(".tnum");
           if (out) out.textContent = `${v}%`;
+          const km = root.querySelector(".tkm");
+          const per = this._d && this._d.rangeTarget && this._d.target ? this._d.rangeTarget / this._d.target : null;
+          if (km && per) km.textContent = ` ≈ ${fmt(per * v)} km`;
         };
         el.addEventListener("pointerdown", () => (this._dragging = true));
         el.addEventListener("input", () => {
@@ -375,6 +472,18 @@ class OffgridEvCard extends HTMLElement {
         });
         return;
       }
+      if (action === "deptime") {
+        el.addEventListener("focus", () => (this._dragging = true));
+        el.addEventListener("blur", () => {
+          this._dragging = false;
+          this._render();
+        });
+        el.addEventListener("change", () => {
+          if (!el.value) return;
+          this._hass.callService("time", "set_value", { entity_id: this._d.depTimeEnt, time: `${el.value}:00` });
+        });
+        return;
+      }
       el.addEventListener("click", (ev) => {
         ev.stopPropagation();
         if (action === "mode") this._setMode(el.dataset.mode);
@@ -383,6 +492,12 @@ class OffgridEvCard extends HTMLElement {
           this._render();
         } else if (action === "more") this._moreInfo();
         else if (action === "settings") this._settings();
+        else if (action === "depon") this._hass.callService("switch", "toggle", { entity_id: this._d.depSwitch });
+        else if (action === "refresh") {
+          el.classList.add("busy");
+          this._hass.callService("button", "press", { entity_id: this._id("button", "refresh_car") });
+        } else if (action === "ac" && this._d.car.ac_entity)
+          this._hass.callService("switch", "toggle", { entity_id: this._d.car.ac_entity });
       });
     });
   }
@@ -477,6 +592,7 @@ const STYLE = `<style>
   .nicon { width:38px; height:38px; flex:none; border-radius:50%; display:flex; align-items:center; justify-content:center;
     background:var(--card-background-color, #fff); color:var(--muted); }
   .node.right .nicon { color:var(--accent); }
+  .nicon.grid { color:#3D7BF7; }
   .nlabel { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; }
   .nval { font-size:15px; font-weight:600; white-space:nowrap; }
   .nsub { font-size:11.5px; color:var(--muted); white-space:nowrap; }
@@ -510,7 +626,34 @@ const STYLE = `<style>
   .tv small { font-size:11px; font-weight:500; color:var(--muted); }
   .tl { font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-  .tval { font-size:16px; font-weight:600; color:var(--accent); }
+  .tval { font-size:16px; font-weight:600; color:var(--accent); white-space:nowrap; }
+  .tkm { font-size:13px; font-weight:500; color:var(--muted); }
+  .muted.warn { color:var(--warning-color, #ffa600); }
+  .eta { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-top:10px; font-size:13px; color:var(--muted); }
+  .eta b { color:var(--primary-text-color); font-weight:600; }
+  .eta ha-icon { --mdc-icon-size:17px; color:var(--accent); }
+  .dep { display:flex; align-items:center; gap:10px; margin-top:12px; padding:10px 12px; border-radius:12px; background:var(--tile); }
+  .dep > ha-icon { color:var(--muted); }
+  .dep.boost { background:color-mix(in srgb, #3D7BF7 14%, transparent); }
+  .dep.boost > ha-icon { color:#3D7BF7; }
+  .dtext { flex:1; min-width:0; }
+  .dlabel { font-size:14px; font-weight:500; }
+  .dhint { font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  input[type=time] { font:inherit; font-size:15px; font-weight:600; color:var(--primary-text-color); background:var(--card-background-color, #fff);
+    border:1px solid var(--line); border-radius:8px; padding:4px 6px; color-scheme:light dark; }
+  input[type=time].dim { opacity:.5; }
+  .toggle { position:relative; width:42px; height:24px; flex:none; border-radius:99px; background:color-mix(in srgb, var(--primary-text-color) 22%, transparent); transition:background .2s; }
+  .toggle span { position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:transform .2s; }
+  .toggle.on { background:var(--accent); }
+  .toggle.on span { transform:translateX(18px); }
+  .actions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:99px; font-size:13px; font-weight:500;
+    background:var(--tile); color:var(--primary-text-color); }
+  .pill ha-icon { --mdc-icon-size:17px; color:var(--muted); }
+  .pill.on { background:color-mix(in srgb, #14B8A6 18%, transparent); }
+  .pill.on ha-icon { color:#14B8A6; }
+  .pill.busy ha-icon { animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
   input[type=range] { -webkit-appearance:none; appearance:none; width:100%; height:8px; border-radius:8px; margin:4px 0; outline:none;
     background:linear-gradient(90deg, var(--accent) var(--p), color-mix(in srgb, var(--primary-text-color) 12%, transparent) var(--p)); }
   input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:22px; height:22px; border-radius:50%; cursor:pointer;
@@ -529,6 +672,10 @@ const STYLE = `<style>
   .link:hover { background:color-mix(in srgb, var(--primary-color) 10%, transparent); }
 
   @container (max-width: 400px) {
+    .tiles.compact { grid-template-columns:repeat(4,1fr); gap:6px; }
+    .tiles.compact .tile { padding:8px 4px; }
+    .tiles.compact .tv { font-size:14px; }
+    .tiles.compact .tv small { display:none; }
     .hero { gap:14px; padding:14px 14px 10px; }
     .ring { width:96px; height:96px; }
     .big { font-size:26px; }

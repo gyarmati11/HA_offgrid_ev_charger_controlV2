@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, time as dtime, timedelta
 import logging
 import math
 from typing import Any
@@ -22,16 +22,25 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     ACTION_PREFIX,
+    CARWINGS_FIRST_REFRESH,
+    CARWINGS_MIN_REFRESH,
+    CARWINGS_NEAR_INTERVAL,
+    CARWINGS_NEAR_TARGET,
+    CARWINGS_NONE,
     CAR_FULL_DELAY,
     CHARGER_OFFLINE_NOTIFY_MIN,
     CHARGING_THRESHOLD_W,
     CONF_BATTERY_POWER,
     CONF_BATTERY_SOC,
+    CONF_CARWINGS_VIN,
     CONF_CHARGER_POWER,
     CONF_CHARGER_POWER_UNIT,
     CONF_CONTROL,
     CONF_CURRENT,
     CONF_EV_SOC,
+    CONF_GRID_POWER,
+    CONF_GRID_STATES,
+    CONF_INVERTER_MODE,
     CONF_NOTIFY,
     CONF_PLUG,
     CONF_PLUG_STATES,
@@ -39,6 +48,13 @@ from .const import (
     CONF_START_OPTION,
     CONF_STOP_OPTION,
     DATA_ERROR_DELAY,
+    DEFAULT_DEPARTURE,
+    DEFAULT_GRID_STATES,
+    DEPARTURE_MARGIN_H,
+    GRID_MARGIN_W,
+    GRID_ON_THRESHOLD_W,
+    GRID_RESTART_DELAY,
+    GRID_SETTLE_S,
     DEFAULT_PLUG_STATES,
     DEFAULT_START_OPTION,
     DEFAULT_STOP_OPTION,
@@ -60,8 +76,12 @@ from .const import (
     TICK_SECONDS,
     UNPLUG_DELAY,
 )
+from .carwings import CarLink, find_cars
 
 _LOGGER = logging.getLogger(__name__)
+
+TARGET_HYSTERESIS = 2          # % – restart only below target − this
+STALE_SOC_GRACE_MIN = 15       # min – ignore a pre-plug-in SOC reading this long
 
 _INVALID = (STATE_UNKNOWN, STATE_UNAVAILABLE, "", "none", "None")
 _CAL_PERIODS = ("day", "week", "month", "year")
@@ -129,6 +149,34 @@ class EVChargeController:
         self._offline_notified = False
         self.charger_offline = False
         self.charger_missing: list[str] = []
+
+        # car (OpenCARWINGS) / target / departure
+        self.car: CarLink | None = None
+        self.car_info: dict[str, Any] = {}
+        self.soc_anchor: dict[str, Any] | None = None
+        self.departure_time: str = DEFAULT_DEPARTURE
+        self.departure_on = False
+        self.boost_active = False
+        self.ev_soc_est: float | None = None
+        self.soc_stale = False
+        self.ev_range: float | None = None
+        self.range_at_target: float | None = None
+        self.energy_to_target: float | None = None
+        self.minutes_to_target: float | None = None
+        self.finish_at: datetime | None = None
+        self.capacity_used: float | None = None
+        self._boost_until: datetime | None = None
+        self._last_refresh: datetime | None = None
+        self._refresh_after_stop = False
+        self._plugged_at: datetime | None = None
+        self._target_reached = False
+
+        # grid (inverter on utility / bypass)
+        self.grid_configured = False
+        self.on_grid: bool | None = None
+        self.grid_power: float | None = None
+        self._grid_updated: datetime | None = None
+        self._last_cmd: datetime | None = None
         self._unplug_timer: CALLBACK_TYPE | None = None
         self._question_timer: CALLBACK_TYPE | None = None
 
@@ -155,6 +203,20 @@ class EVChargeController:
                 self.periods[period].update(val)
         if isinstance(data.get("session"), dict):
             self.session.update(data["session"])
+        if isinstance(data.get("soc_anchor"), dict):
+            self.soc_anchor = data["soc_anchor"]
+        if isinstance(data.get("departure_time"), str):
+            self.departure_time = data["departure_time"]
+        self.departure_on = bool(data.get("departure_on", False))
+        vin = (self.cfg.get(CONF_CARWINGS_VIN) or "").strip()
+        if CONF_CARWINGS_VIN not in self.cfg:
+            # entry created before v1.2 – link automatically if there is exactly one car
+            cars = find_cars(self.hass)
+            if len(cars) == 1:
+                vin = next(iter(cars))
+                _LOGGER.info("OpenCARWINGS car %s linked automatically", vin)
+        if vin and vin != CARWINGS_NONE:
+            self.car = CarLink(self.hass, vin)
         self._rollover()
 
         self.plugged = bool(self._raw_plugged())
@@ -172,6 +234,11 @@ class EVChargeController:
         self._unsubs.append(
             self.hass.bus.async_listen(EVENT_NOTIFICATION_ACTION, self._on_action)
         )
+        grid_ids = [e for e in (self.cfg.get(CONF_GRID_POWER), self.cfg.get(CONF_INVERTER_MODE)) if e]
+        if grid_ids:
+            self._unsubs.append(
+                async_track_state_change_event(self.hass, grid_ids, self._grid_changed)
+            )
         self._unsubs.append(async_call_later(self.hass, 5, self._async_tick))
 
     async def async_shutdown(self) -> None:
@@ -199,6 +266,9 @@ class EVChargeController:
             "total_kwh": self.total_kwh,
             "periods": self.periods,
             "session": self.session,
+            "soc_anchor": self.soc_anchor,
+            "departure_time": self.departure_time,
+            "departure_on": self.departure_on,
         }
 
     def _save(self) -> None:
@@ -222,10 +292,45 @@ class EVChargeController:
         self.async_request_tick()
 
     async def async_set_param(self, key: str, value: float) -> None:
+        if key == "target_soc" and float(value) != self.params.get(key):
+            self._target_reached = False
+            self._boost_until = None
         self.params[key] = float(value)
         self._save()
         self._update()
         self.async_request_tick()
+
+    async def async_set_departure(self, value: dtime) -> None:
+        self.departure_time = value.strftime("%H:%M:%S")
+        self._boost_until = None
+        self._save()
+        self._update()
+        self.async_request_tick()
+
+    async def async_set_departure_on(self, on: bool) -> None:
+        self.departure_on = bool(on)
+        self._boost_until = None
+        self._save()
+        self._update()
+        self.async_request_tick()
+
+    async def async_refresh_car(self) -> None:
+        if self.car and await self.car.async_refresh():
+            self._last_refresh = dt_util.utcnow()
+
+    def departure_value(self) -> dtime:
+        try:
+            return dtime.fromisoformat(self.departure_time)
+        except ValueError:
+            return dtime(7, 0)
+
+    def next_departure(self, now: datetime) -> datetime:
+        local = dt_util.as_local(now)
+        t = self.departure_value()
+        dep = local.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
+        if dep <= local:
+            dep += timedelta(days=1)
+        return dep
 
     async def async_reset_statistics(self) -> None:
         self.total_kwh = 0.0
@@ -233,6 +338,7 @@ class EVChargeController:
             period["kwh"] = 0.0
             period["sec"] = 0.0
         self.session.update({"kwh": 0.0, "sec": 0.0})
+        self.soc_anchor = None
         await self._store.async_save(self._data())
         self._update()
 
@@ -336,6 +442,7 @@ class EVChargeController:
             if hi is not None:
                 amps = min(amps, int(float(hi)))
         await self._call(eid.split(".")[0], "set_value", {"entity_id": eid, "value": amps})
+        self._last_cmd = dt_util.utcnow()
 
     # ------------------------------------------------------------------
     # Notifications
@@ -397,11 +504,15 @@ class EVChargeController:
 
     async def _on_plugged(self) -> None:
         self.session = {"kwh": 0.0, "sec": 0.0, "start": dt_util.utcnow().isoformat()}
+        self._plugged_at = dt_util.utcnow()
+        self._last_refresh = None
+        self._target_reached = False
+        self._boost_until = None
         self.mode = MODE_SOLAR
         self._save()
         timeout = int(self.params["question_timeout"])
         soc = self._num(self.cfg[CONF_BATTERY_SOC])
-        ev_soc = self._num(self.cfg.get(CONF_EV_SOC))
+        ev_soc = self.ev_soc_est
         msg = "Milyen módon töltsünk?"
         if soc is not None:
             msg += f" Ház-akku: {round(soc)}%."
@@ -468,8 +579,47 @@ class EVChargeController:
                 "summary",
             )
         await self._clear("full")
+        await self._clear("target")
         self._update()
         self.async_request_tick()
+
+    # ------------------------------------------------------------------
+    # Grid detection
+    # ------------------------------------------------------------------
+    def _read_grid(self) -> None:
+        cfg = self.cfg
+        gp_id = cfg.get(CONF_GRID_POWER)
+        mode_id = cfg.get(CONF_INVERTER_MODE)
+        self.grid_configured = bool(gp_id or mode_id)
+        gp = self._num(gp_id)
+        self.grid_power = abs(gp) if gp is not None else None
+        gst = self._state(gp_id)
+        self._grid_updated = gst.last_updated if gst is not None else None
+        on: bool | None = None
+        st = self._state(mode_id)
+        if st is not None:
+            states = [
+                x.strip().lower()
+                for x in str(cfg.get(CONF_GRID_STATES) or DEFAULT_GRID_STATES).split(",")
+                if x.strip()
+            ]
+            on = st.state.strip().lower() in states
+        elif self.grid_power is not None:
+            on = self.grid_power > GRID_ON_THRESHOLD_W
+        self.on_grid = on
+
+    @callback
+    def _grid_changed(self, event: Event) -> None:
+        """React at once when the inverter switches to grid or the grid limit is exceeded."""
+        if self.mode not in (MODE_FAST, MODE_SOLAR) or not self.plugged:
+            return
+        before = self.on_grid
+        self._read_grid()
+        limit = self.params["grid_max_power"] - GRID_MARGIN_W
+        if self.on_grid != before or (
+            self.on_grid and self.grid_power is not None and self.grid_power > limit
+        ):
+            self.async_request_tick()
 
     # ------------------------------------------------------------------
     # Energy accounting
@@ -561,11 +711,18 @@ class EVChargeController:
         else:
             self._missing_since = None
             error = False
+        self._read_grid()
+        needs_batt = self._needs_battery()
         if error and not self.data_error:
             await self._notify(
                 "⚠️ EV töltés – hiányzó ház-akku adat",
-                f"Nem elérhető: {', '.join(missing)}. A töltés biztonsági okból leállt, "
-                "az adatok visszatérésekor automatikusan folytatódik.",
+                f"Nem elérhető: {', '.join(missing)}. "
+                + (
+                    "A töltés biztonsági okból leállt, "
+                    if needs_batt
+                    else "A szolár vezérlés szünetel (Csepp/Gyors mód tovább tölt), "
+                )
+                + "az adatok visszatérésekor automatikusan folytatódik.",
                 "error",
             )
         elif not error and self.data_error:
@@ -606,6 +763,14 @@ class EVChargeController:
         self.charger_power = float(max(round(cp), 0))
         self.charging = self.charger_power > CHARGING_THRESHOLD_W
 
+        ev_soc = self._update_car(now, ev_soc)
+        plan_soc = ev_soc
+        if (
+            self.soc_stale
+            and self._plugged_at is not None
+            and (now - self._plugged_at).total_seconds() < STALE_SOC_GRACE_MIN * 60
+        ):
+            plan_soc = None  # reading is from before plug-in – wait for a fresh one
         self.readings = {
             "battery_soc": soc,
             "battery_power": p,
@@ -613,6 +778,9 @@ class EVChargeController:
             "charge_current": current if (cur is not None or enabled) else None,
             "charge_current_known": cur is not None,
             "charger_enabled": enabled,
+            "on_grid": self.on_grid,
+            "grid_power": self.grid_power,
+            "grid_limit": self.params["grid_max_power"] if self.grid_configured else None,
         }
 
         # --- car full: enabled, plugged, measured power below threshold for 5 min
@@ -640,7 +808,7 @@ class EVChargeController:
             )
         self.car_full = full
 
-        if missing and not error:
+        if missing and not error and needs_batt:
             self.status = f"⏳ Ház-akku adatra várakozás: {', '.join(missing)}"[:255]
             self._update()
             return
@@ -679,7 +847,7 @@ class EVChargeController:
                 await self._clear("offline")
             self._sent_current = None  # charger may have restarted: resend
 
-        enable, amps, msg = self._plan(now, error, soc, p, enabled, current, ev_soc, ctrl)
+        enable, amps, msg = self._plan(now, error, soc, p, enabled, current, plan_soc, ctrl)
         if enable is not None:
             self._want_charge = enable
 
@@ -710,7 +878,195 @@ class EVChargeController:
 
         self.target_current = amps if enable else None
         self.status = msg[:255]
+        await self._maybe_refresh(now)
         self._update()
+
+    # ------------------------------------------------------------------
+    # Car (OpenCARWINGS) – SOC estimate, range, time to target, refresh
+    # ------------------------------------------------------------------
+    def _update_car(self, now: datetime, ev_soc_entity: float | None) -> float | None:
+        P = self.params
+        info: dict[str, Any] = self.car.read() if self.car else {}
+        csoc = info.get("soc")
+        if self.car and csoc is not None:
+            ts = info.get("updated")
+            ts_iso = ts.isoformat() if ts else None
+            a = self.soc_anchor
+            if (
+                a is None
+                or a.get("ts") != ts_iso
+                or a.get("soc") != csoc
+                or float(a.get("kwh", 0.0)) > self.total_kwh + 1e-9
+            ):
+                self.soc_anchor = {"soc": csoc, "kwh": self.total_kwh, "ts": ts_iso}
+                self._save()
+
+        cap = P["battery_capacity"] or 40.0
+        wh = info.get("wh_content")
+        if wh and csoc and csoc >= 10:
+            auto = wh / 1000 / (csoc / 100)
+            if 10 <= auto <= 120:
+                cap = auto
+        self.capacity_used = round(cap, 1)
+        eff = (P["charge_efficiency"] or 88.0) / 100
+
+        est: float | None = None
+        stale = False
+        if self.car and self.soc_anchor:
+            a = self.soc_anchor
+            est = float(a["soc"]) + (self.total_kwh - float(a["kwh"])) * eff / cap * 100
+            est = max(0.0, min(100.0, est))
+            ts = dt_util.parse_datetime(a["ts"]) if a.get("ts") else None
+            stale = bool(self._plugged_at and ts and ts < self._plugged_at)
+        elif ev_soc_entity is not None:
+            est = ev_soc_entity
+        self.ev_soc_est = round(est, 1) if est is not None else None
+        self.soc_stale = stale
+
+        target = P["target_soc"]
+        if info.get("range_acoff") and csoc:
+            km_per_pct = info["range_acoff"] / csoc
+        else:
+            km_per_pct = cap / (P["ev_consumption"] or 16.0)
+        self.ev_range = round(est * km_per_pct) if est is not None else None
+        self.range_at_target = round(target * km_per_pct)
+        if est is not None:
+            self.energy_to_target = round(max(0.0, (target - est) / 100 * cap / eff), 2)
+        else:
+            self.energy_to_target = None
+        if self.energy_to_target and self.charger_power > CHARGING_THRESHOLD_W:
+            self.minutes_to_target = round(self.energy_to_target / (self.charger_power / 1000) * 60)
+            self.finish_at = now + timedelta(minutes=self.minutes_to_target)
+        else:
+            self.minutes_to_target = None
+            self.finish_at = None
+
+        upd = info.get("updated")
+        self.car_info = {
+            **{k: v for k, v in info.items() if k != "updated"},
+            "updated": upd.isoformat() if upd else None,
+            "configured": self.car is not None,
+        }
+        return self.ev_soc_est
+
+    async def _maybe_refresh(self, now: datetime) -> None:
+        if not self.car or not self.plugged or not self.car_info.get("refresh_entity"):
+            return
+        interval = self.params["carwings_refresh"]
+        if interval <= 0:
+            return
+        last = self._last_refresh
+        if last is None:
+            since_plug = (
+                (now - self._plugged_at).total_seconds() / 60 if self._plugged_at else 1e9
+            )
+            due = since_plug >= CARWINGS_FIRST_REFRESH
+        else:
+            mins = (now - last).total_seconds() / 60
+            if mins < CARWINGS_MIN_REFRESH:
+                return
+            due = False
+            if self._refresh_after_stop:
+                due = True
+            elif self.charging or self._want_charge:
+                iv = interval
+                est = self.ev_soc_est
+                if est is not None and self.params["target_soc"] - est <= CARWINGS_NEAR_TARGET:
+                    iv = min(iv, CARWINGS_NEAR_INTERVAL)
+                due = mins >= iv
+        if due and await self.car.async_refresh():
+            self._last_refresh = now
+            self._refresh_after_stop = False
+
+    async def _notify_target(self, ev_soc: float) -> None:
+        km = f" (~{self.range_at_target} km)" if self.range_at_target else ""
+        st = self.stats("session")
+        await self._notify(
+            "✅ Az autó elérte a célt",
+            f"Töltöttség: ~{round(ev_soc)}%{km}. Ez az alkalom: {st['kwh']:.2f} kWh, "
+            f"{format_duration(st['sec'])}.",
+            "target",
+        )
+
+    def _needs_battery(self) -> bool:
+        """Does the current mode depend on the house battery data?"""
+        if self.mode == MODE_SOLAR:
+            return True
+        return self.mode == MODE_FAST and not self.grid_configured
+
+    def _plan_fast_grid(
+        self,
+        now: datetime,
+        enabled: bool,
+        current: int,
+        p: float | None,
+        U: float,
+        min_a: int,
+        max_a: int,
+        tag: str,
+        batt: str,
+    ) -> tuple[bool | None, int | None, str]:
+        """Fast: max current on battery, grid import capped when on grid."""
+        P = self.params
+        grid_max = P["grid_max_power"]
+        limit = grid_max - GRID_MARGIN_W
+        gp = self.grid_power
+        pause = f"{tag}⚡ Gyors szünetel – hálózat {round(gp or 0)} W, korlát {round(grid_max)} W"
+
+        if self.on_grid:
+            if gp is None:
+                amps = min(max(math.floor(limit * 0.6 / U), min_a), max_a)
+                return True, amps, f"{tag}⚡ Gyors · hálózaton, nincs grid adat – óvatos {amps} A"
+            if not enabled:
+                room = limit - gp
+                if room < (min_a + 1) * U:  # 1 A margin against on/off flapping
+                    return False, None, pause
+                since = (now - self._last_stop).total_seconds() if self._last_stop else 1e9
+                if since < GRID_RESTART_DELAY:
+                    return False, None, f"{tag}⚡ Gyors vár – újraindítási szünet ({round(gp)} W)"
+                amps = min(max(math.floor(room / U), min_a), max_a)
+                return True, amps, f"{tag}⚡ Gyors indul hálózatról · {amps} A"
+            if (
+                self._last_cmd is not None
+                and self._grid_updated is not None
+                and self._grid_updated <= self._last_cmd
+                and (now - self._last_cmd).total_seconds() < GRID_SETTLE_S
+            ):
+                # the grid reading is older than our last current change – wait for it
+                return True, current, f"{tag}⚡ Gyors · hálózatról · {current} A · mérésre vár"
+            err = gp - limit
+            if err > 0:
+                amps = current - math.ceil(err / U)
+                if amps < min_a:
+                    return False, None, pause
+            elif err < -U:
+                amps = current + min(3, math.floor(-err / U))
+            else:
+                amps = current
+            amps = min(max(amps, min_a), max_a)
+            return (
+                True,
+                amps,
+                f"{tag}⚡ Gyors · hálózatról · {amps} A · {round(gp)} / {round(grid_max)} W",
+            )
+
+        if self.on_grid is None:
+            amps = min(max(math.floor(limit * 0.6 / U), min_a), max_a)
+            return True, amps, f"{tag}⚡ Gyors · inverter állapot ismeretlen – óvatos {amps} A"
+
+        # on battery: as fast as allowed
+        max_dis = P["max_battery_discharge"]
+        if p is not None and enabled and p > max_dis:
+            amps = current - math.ceil((p - max_dis) / U)
+            label = "⚡ Gyors · akkuról, inverter limit"
+        elif p is not None and enabled:
+            amps = current + math.floor((max_dis - p) / U)
+            label = "⚡ Gyorstöltés akkuról"
+        else:
+            amps = max_a
+            label = "⚡ Gyorstöltés akkuról"
+        amps = min(max(amps, min_a), max_a)
+        return True, amps, f"{tag}{label} · {amps} A{batt}"
 
     # ------------------------------------------------------------------
     # Decision logic
@@ -737,20 +1093,69 @@ class EVChargeController:
 
         if not self.plugged:
             return False, min_a, "🔌 Nincs autó csatlakoztatva"
-        if error:
-            return False, None, f"⚠️ Nem elérhető: {', '.join(self.missing)} – biztonsági leállítás"
         if mode == MODE_MANUAL:
             return None, None, "🖐️ Kézi mód – az integráció nem vezérli a töltőt"
         if mode == MODE_OFF:
             return False, None, "⏸️ Töltés kikapcsolva"
 
-        assert soc is not None and p is not None
-        socr = round(soc)
+        socr = round(soc) if soc is not None else None
+        batt = f" · ház-akku {socr}%" if socr is not None else ""
         target = P["target_soc"]
-        if ev_soc is not None and ev_soc >= target:
-            return False, None, f"✅ Cél elérve: {round(ev_soc)}% / {round(target)}%"
+        if ev_soc is not None:
+            reached = ev_soc >= target or (
+                self._target_reached and ev_soc > target - TARGET_HYSTERESIS
+            )
+            if reached:
+                if not self._target_reached:
+                    self._target_reached = True
+                    self._refresh_after_stop = True
+                    self.hass.async_create_task(self._notify_target(ev_soc))
+                self.boost_active = False
+                return False, None, f"✅ Cél elérve: {round(ev_soc)}% / {round(target)}%"
+            self._target_reached = False
         if self.car_full:
             return None, None, "🔋 Autó feltöltve – csatlakoztatva, nem vesz fel áramot"
+
+        # ---------------- Ready-by (departure) boost ----------------
+        tag = ""
+        boost = False
+        if (
+            self.departure_on
+            and mode in (MODE_SOLAR, MODE_TRICKLE)
+            and ev_soc is not None
+            and ev_soc < target
+        ):
+            dep = self.next_departure(now)
+            if self._boost_until is not None and now < self._boost_until:
+                boost = True
+            else:
+                self._boost_until = None
+                max_kw = max_a * U / 1000
+                need_h = (self.energy_to_target or 0.0) / max_kw + DEPARTURE_MARGIN_H
+                left_h = (dep - now).total_seconds() / 3600
+                if need_h >= left_h:
+                    boost = True
+                    self._boost_until = dep
+            if boost:
+                mode = MODE_FAST
+                self._short_since = None
+                tag = f"⏰ Indulásig ({dep.strftime('%H:%M')}) · "
+        else:
+            self._boost_until = None
+        self.boost_active = boost
+
+        # ---------------- Trickle: independent of the house battery ----------------
+        if mode == MODE_TRICKLE:
+            amps = min(max(int(P["trickle_current"]), min_a), max_a)
+            return True, amps, f"💧 Csepptöltés · {amps} A{batt}"
+
+        # ---------------- Fast with grid detection ----------------
+        if mode == MODE_FAST and self.grid_configured:
+            return self._plan_fast_grid(now, enabled, current, p, U, min_a, max_a, tag, batt)
+
+        # ---------------- From here the house battery data is required ----------------
+        if error or soc is None or p is None:
+            return False, None, f"⚠️ Nem elérhető: {', '.join(self.missing)} – biztonsági leállítás"
         if soc < P["protect_soc"]:
             return (
                 False,
@@ -758,19 +1163,11 @@ class EVChargeController:
                 f"🛑 Ház-akku {socr}% – védelmi szint ({round(P['protect_soc'])}%) alatt",
             )
 
-        # ---------------- Trickle ----------------
-        if mode == MODE_TRICKLE:
-            limit = P["trickle_min_soc"] + (0 if enabled else SOC_HYSTERESIS)
-            if soc < limit:
-                return False, None, f"💧 Csepp szünetel – ház-akku {socr}% < {round(limit)}%"
-            amps = min(max(int(P["trickle_current"]), min_a), max_a)
-            return True, amps, f"💧 Csepptöltés · {amps} A · ház-akku {socr}%"
-
-        # ---------------- Fast ----------------
+        # ---------------- Fast without grid detection (battery limits) ----------------
         if mode == MODE_FAST:
             limit = P["fast_min_soc"] + (0 if enabled else SOC_HYSTERESIS)
             if soc < limit:
-                return False, None, f"⚡ Gyors szünetel – ház-akku {socr}% < {round(limit)}%"
+                return False, None, f"{tag}⚡ Gyors szünetel – ház-akku {socr}% < {round(limit)}%"
             max_dis = P["max_battery_discharge"]
             if not enabled:
                 amps, label = min_a, "⚡ Gyorstöltés indul"
@@ -781,7 +1178,7 @@ class EVChargeController:
                 amps = current + min(2, math.floor((max_dis - p) / U))
                 label = "⚡ Gyorstöltés"
             amps = min(max(amps, min_a), max_a)
-            return True, amps, f"{label} · {amps} A · ház-akku {socr}%"
+            return True, amps, f"{tag}{label} · {amps} A{batt}"
 
         # ---------------- Solar ----------------
         full = soc >= P["battery_full_soc"]

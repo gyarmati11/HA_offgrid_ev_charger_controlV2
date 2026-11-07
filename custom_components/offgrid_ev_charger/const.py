@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 DOMAIN = "offgrid_ev_charger"
-PLATFORMS = ["sensor", "binary_sensor", "select", "number", "button"]
+PLATFORMS = ["sensor", "binary_sensor", "select", "number", "button", "switch", "time"]
 STORAGE_VERSION = 1
 
 # --- Config entry keys -------------------------------------------------
@@ -20,6 +20,12 @@ CONF_CHARGER_POWER = "charger_power"
 CONF_CHARGER_POWER_UNIT = "charger_power_unit"
 CONF_EV_SOC = "ev_soc"
 CONF_NOTIFY = "notify_service"
+CONF_CARWINGS_VIN = "carwings_vin"
+CONF_GRID_POWER = "grid_power"
+CONF_INVERTER_MODE = "inverter_mode"
+CONF_GRID_STATES = "grid_states"
+DEFAULT_GRID_STATES = "line, line mode, grid, grid mode, utility, bypass, l"
+CARWINGS_NONE = "none"
 
 SIGN_POS_DISCHARGE = "positive_discharge"
 SIGN_POS_CHARGE = "positive_charge"
@@ -32,7 +38,7 @@ DEFAULT_PLUG_STATES = (
     "charge_done, connected_waiting, on"
 )
 
-OPTIONAL_KEYS = (CONF_CHARGER_POWER, CONF_EV_SOC, CONF_NOTIFY)
+OPTIONAL_KEYS = (CONF_CHARGER_POWER, CONF_EV_SOC, CONF_NOTIFY, CONF_GRID_POWER, CONF_INVERTER_MODE)
 
 # --- Modes -------------------------------------------------------------
 MODE_SOLAR = "solar"
@@ -53,6 +59,16 @@ UNPLUG_DELAY = 30              # s – debounce for unplugging
 CHARGING_THRESHOLD_W = 100     # W – above this the car is really charging
 CHARGER_OFFLINE_NOTIFY_MIN = 5  # min – charger offline while it should charge → notify
 SOC_HYSTERESIS = 5             # % – restart margin for fast / trickle
+CARWINGS_MIN_REFRESH = 5       # min – never ask the car more often than this
+CARWINGS_FIRST_REFRESH = 2     # min – first refresh after plugging in
+CARWINGS_NEAR_TARGET = 5       # % – refresh more often this close to the target
+CARWINGS_NEAR_INTERVAL = 10    # min – refresh interval near the target
+DEPARTURE_MARGIN_H = 0.25      # h – safety margin for the ready-by time
+DEFAULT_DEPARTURE = "07:00:00"
+GRID_MARGIN_W = 200            # W – stay this far below the grid limit
+GRID_ON_THRESHOLD_W = 100      # W – grid import above this means "on grid"
+GRID_RESTART_DELAY = 120       # s – pause before fast restarts on grid
+GRID_SETTLE_S = 20             # s – wait for a fresh grid reading after a change
 
 EVENT_NOTIFICATION_ACTION = "mobile_app_notification_action"
 ACTION_PREFIX = "OGEV_"
@@ -74,11 +90,14 @@ PARAMS: dict[str, tuple] = {
     "solar_allowed_discharge": (0, 2000, 50, 300, "W", "mdi:battery-arrow-down", True),
     "protect_soc": (5, 80, 1, 25, "%", "mdi:shield-half-full", True),
     "fast_min_soc": (5, 90, 1, 30, "%", "mdi:flash", True),
-    "trickle_min_soc": (5, 90, 1, 40, "%", "mdi:water-outline", True),
     "max_battery_discharge": (1000, 15000, 100, 4500, "W", "mdi:flash-alert", True),
+    "grid_max_power": (1000, 15000, 100, 4000, "W", "mdi:transmission-tower", True),
     "question_timeout": (1, 30, 1, 5, "min", "mdi:timer-sand", True),
     "ev_consumption": (5, 40, 0.5, 16, "kWh/100km", "mdi:car-electric", True),
     "petrol_consumption": (2, 20, 0.1, 7, "L/100km", "mdi:gas-station", True),
     "petrol_price": (100, 2000, 1, 620, "{cur}/L", "mdi:cash", True),
     "electricity_price": (0, 500, 1, 0, "{cur}/kWh", "mdi:cash", True),
+    "battery_capacity": (10, 100, 0.5, 40, "kWh", "mdi:car-battery", True),
+    "charge_efficiency": (70, 100, 1, 88, "%", "mdi:transmission-tower-export", True),
+    "carwings_refresh": (0, 120, 5, 30, "min", "mdi:refresh", True),
 }

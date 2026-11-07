@@ -14,7 +14,11 @@ from .entity import OGEVEntity
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    async_add_entities([ResetButton(entry.runtime_data)])
+    ctrl: EVChargeController = entry.runtime_data
+    entities: list[ButtonEntity] = [ResetButton(ctrl)]
+    if ctrl.car is not None:
+        entities.append(RefreshCarButton(ctrl))
+    async_add_entities(entities)
 
 
 class ResetButton(OGEVEntity, ButtonEntity):
@@ -26,3 +30,15 @@ class ResetButton(OGEVEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         await self.ctrl.async_reset_statistics()
+
+
+class RefreshCarButton(OGEVEntity, ButtonEntity):
+    """Ask the car (OpenCARWINGS) for fresh data."""
+
+    _attr_icon = "mdi:car-connected"
+
+    def __init__(self, ctrl: EVChargeController) -> None:
+        super().__init__(ctrl, "refresh_car", "button")
+
+    async def async_press(self) -> None:
+        await self.ctrl.async_refresh_car()

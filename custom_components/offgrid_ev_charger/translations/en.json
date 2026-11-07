@@ -17,10 +17,18 @@
           "plug_states": "States meaning 'connected' (comma separated)",
           "charger_power": "Charger power sensor (optional)",
           "charger_power_unit": "Charger power unit",
-          "ev_soc": "Car SOC sensor (optional)",
+          "inverter_mode": "Inverter mode entity (optional)",
+          "grid_states": "States meaning 'on grid' (comma separated)",
+          "grid_power": "Grid input power sensor (optional)",
+          "carwings_vin": "OpenCARWINGS car",
+          "ev_soc": "Car SOC sensor (optional, if no OpenCARWINGS)",
           "notify_service": "Mobile notify service (optional)"
         },
         "data_description": {
+          "inverter_mode": "e.g. Axpert device mode (Line/Battery). Lets Fast mode know when the inverter switched to grid.",
+          "grid_states": "For a binary sensor add 'on'.",
+          "grid_power": "Power drawn from the grid (W). On grid, Fast mode keeps it below the limit (default 4000 W). Without a mode entity, > 100 W means 'on grid'.",
+          "carwings_vin": "Nissan Leaf / e-NV200 via the OpenCARWINGS integration: SOC, range, refresh and A/C are linked automatically.",
           "power_sign": "Your current code: positive = discharging.",
           "plug_states": "Only for a sensor: its state values that mean the car is connected.",
           "charger_power": "Without it the power is estimated from the current and 'car full' detection is off.",
@@ -49,10 +57,18 @@
           "plug_states": "States meaning 'connected' (comma separated)",
           "charger_power": "Charger power sensor (optional)",
           "charger_power_unit": "Charger power unit",
-          "ev_soc": "Car SOC sensor (optional)",
+          "inverter_mode": "Inverter mode entity (optional)",
+          "grid_states": "States meaning 'on grid' (comma separated)",
+          "grid_power": "Grid input power sensor (optional)",
+          "carwings_vin": "OpenCARWINGS car",
+          "ev_soc": "Car SOC sensor (optional, if no OpenCARWINGS)",
           "notify_service": "Mobile notify service (optional)"
         },
         "data_description": {
+          "inverter_mode": "e.g. Axpert device mode (Line/Battery). Lets Fast mode know when the inverter switched to grid.",
+          "grid_states": "For a binary sensor add 'on'.",
+          "grid_power": "Power drawn from the grid (W). On grid, Fast mode keeps it below the limit (default 4000 W). Without a mode entity, > 100 W means 'on grid'.",
+          "carwings_vin": "Nissan Leaf / e-NV200 via the OpenCARWINGS integration: SOC, range, refresh and A/C are linked automatically.",
           "power_sign": "Your current code: positive = discharging.",
           "plug_states": "Only for a sensor: its state values that mean the car is connected.",
           "charger_power": "Without it the power is estimated from the current and 'car full' detection is off.",
@@ -83,6 +99,18 @@
       },
       "energy_total": {
         "name": "Energy total"
+      },
+      "ev_soc": {
+        "name": "Car state of charge"
+      },
+      "ev_range": {
+        "name": "Car range"
+      },
+      "energy_to_target": {
+        "name": "Energy to target"
+      },
+      "time_to_target": {
+        "name": "Time to target"
       },
       "energy_session": {
         "name": "Energy session"
@@ -196,8 +224,8 @@
       "fast_min_soc": {
         "name": "Fast: stop below battery SOC"
       },
-      "trickle_min_soc": {
-        "name": "Trickle: stop below battery SOC"
+      "grid_max_power": {
+        "name": "Grid max power (fast mode on grid)"
       },
       "max_battery_discharge": {
         "name": "Max battery discharge"
@@ -216,6 +244,15 @@
       },
       "electricity_price": {
         "name": "Electricity price"
+      },
+      "battery_capacity": {
+        "name": "Car battery capacity"
+      },
+      "charge_efficiency": {
+        "name": "Charging efficiency"
+      },
+      "carwings_refresh": {
+        "name": "Car refresh while charging (0 = off)"
       }
     },
     "select": {
@@ -233,6 +270,19 @@
     "button": {
       "reset_statistics": {
         "name": "Reset statistics"
+      },
+      "refresh_car": {
+        "name": "Refresh car data"
+      }
+    },
+    "switch": {
+      "departure_enabled": {
+        "name": "Ready by departure"
+      }
+    },
+    "time": {
+      "departure_time": {
+        "name": "Departure time"
       }
     }
   }

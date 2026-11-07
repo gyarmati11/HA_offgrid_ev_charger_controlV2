@@ -7,8 +7,8 @@ A ház-akku SOC-ja és teljesítménye alapján szabályozza a töltőáramot, h
 
 - **Töltési módok**
   - ☀️ **Szolár** – csak a napelem-felesleg megy az autóba. Arányos szabályozás az akku teljesítménye alapján. Teli ház-akkunál fokozatosan emeli az áramot, hogy megtalálja az inverter által visszafogott (rejtett) PV-teljesítményt. Leáll, ha 2 percig minimum árammal sincs felesleg; utána 5 perc szünet.
-  - ⚡ **Gyors** – a lehető leggyorsabban tölt (max áramig), de az inverter/BMS merülési limitjét betartja.
-  - 💧 **Csepp** – alacsony, fix áram, ha se nap, se sok akku nincs. Saját SOC-határral.
+  - ⚡ **Gyors** – a beállított max árammal tölt, amíg az inverter akkuról megy. Ha hálózatra vált, úgy szabályoz, hogy a hálózatból felvett teljesítmény a korlát alatt maradjon (alap: 4000 W). Ha már a minimális áram sem fér bele, szünetel, és 2 perc után, ráhagyással indul újra. Ehhez add meg az inverter üzemmód entitását és/vagy a hálózati teljesítmény szenzort; ezek nélkül a régi, ház-akku alapú védelem működik.
+  - 💧 **Csepp** – alacsony, fix áram, a ház-akku töltöttségétől és adataitól függetlenül.
   - ⏸️ **Kikapcsolva** és 🖐️ **Kézi** (az integráció nem nyúl a töltőhöz).
 - **Csatlakoztatáskor kérdés** a telefonon gombokkal (Szolár / Gyors / Csepp). Ha nincs válasz, a beállított idő után **Szolár**.
 - **Állapot kijelzés** mindig: `sensor.ogev_status` (pl. „☀️ Szolár · 11 A ↑ · ház-akku 90%”).
@@ -16,6 +16,20 @@ A ház-akku SOC-ja és teljesítménye alapján szabályozza a töltőáramot, h
 - **Hiba kezelés:** ha egy szükséges entitás 1 percig nem elérhető, biztonsági leállás, visszatéréskor automatikus folytatás.
 - **Statisztika** alkalomra / napra / hétre / hónapra / évre: kWh, megtehető km, megtakarítás benzineshez képest, töltési idő. HA újraindítás után is megmarad. Az `sensor.ogev_energy_total` az Energia dashboardhoz is hozzáadható.
 - **Minden paraméter állítható** a felületen (fogyasztás 16 kWh/100 km, benzinár, áramhatárok, SOC-küszöbök…).
+
+## Nissan Leaf / e-NV200 – OpenCARWINGS
+
+Ha telepítve van az [OpenCARWINGS integráció](https://github.com/czapeczek/ha_opencarwings), a beállításoknál
+válaszd ki az autót („OpenCARWINGS autó”). Ha csak egy autód van, a párosítás automatikus. Ezután:
+
+- **Valós töltöttség az autóból.** Mivel az autó csak ritkán küld adatot, két frissítés között a betöltött kWh-ból
+  becsüli a SOC-t (`sensor.ogev_ev_soc`). A kapacitást az autó adataiból számolja, a hatásfok állítható (alap: 88%).
+- **Automatikus frissítés:** csatlakoztatás után 2 perccel, töltés közben 30 percenként (állítható, 0 = ki),
+  a cél közelében 10 percenként, leálláskor egy ellenőrző frissítés. Csatlakoztatás előtti (régi) adat alapján nem áll le.
+- **Meddig töltse:** cél töltöttség (pl. 80% ≈ 200 km), a célt elérve leáll és értesít. Csak 2%-os esés után indul újra.
+- **Indulásra kész:** add meg az indulás idejét. Ha a napelemből nem érné el a célt addig, időben gyorstöltésre vált.
+- **Kártyán:** hatótáv (klímával és anélkül), akku állapot (SOH), utastér hőmérséklet, frissítés és klíma gomb,
+  hátralévő kWh és várható befejezés.
 
 ## Telepítés HACS-sal
 
@@ -89,6 +103,19 @@ Világos és sötét témával, telefonon is működik.
 A Gyors és Csepp mód 5% hiszterézissel indul újra, hogy ne kapcsolgasson a határon.
 
 ## Változások
+
+**1.3.0**
+- Csepp mód: a ház-akku töltöttségétől függetlenül tölt (akku adat nélkül is).
+- Gyors mód: max árammal tölt akkuról; hálózatra váltáskor azonnal a hálózati korlát (alap 4000 W) alá szabályoz, szükség esetén szünetel. Új opcionális beállítások: inverter üzemmód entitás, „hálózaton” állapotok, hálózati teljesítmény szenzor; új paraméter: `number.ogev_grid_max_power`.
+- A `number.ogev_trickle_min_soc` megszűnt (törölhető az entitások közül).
+- Kártya: hálózati üzemben a hálózati teljesítmény és a korlát látszik.
+
+**1.2.0**
+- OpenCARWINGS (Nissan Leaf / e-NV200) támogatás: autó töltöttség, hatótáv, akku állapot, automatikus adatfrissítés.
+- „Meddig töltse”: cél km-ben is, hátralévő energia és várható befejezés, értesítés a cél elérésekor.
+- Új: „Indulásra kész” időpont automatikus gyorsítással.
+- Új entitások: `sensor.ogev_ev_soc`, `sensor.ogev_ev_range`, `sensor.ogev_energy_to_target`, `sensor.ogev_time_to_target`,
+  `switch.ogev_departure_enabled`, `time.ogev_departure_time`, `button.ogev_refresh_car`.
 
 **1.1.1**
 - Javítva: leállítás után a töltő „unknown” áramerősséget jelzett, amit a vezérlő hiányzó adatnak vett. Leállításkor már nem küld áramerősséget, indítás előtt viszont mindig beállítja.

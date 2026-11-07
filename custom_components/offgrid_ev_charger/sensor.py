@@ -10,7 +10,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfEnergy, UnitOfLength, UnitOfPower, UnitOfTime
+from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfLength, UnitOfPower, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -27,6 +27,10 @@ async def async_setup_entry(
         StatusSensor(ctrl),
         ChargerPowerSensor(ctrl),
         TotalEnergySensor(ctrl),
+        EvSocSensor(ctrl),
+        EvRangeSensor(ctrl),
+        EnergyToTargetSensor(ctrl),
+        TimeToTargetSensor(ctrl),
     ]
     for period in PERIODS:
         entities += [
@@ -64,6 +68,109 @@ class StatusSensor(OGEVEntity, SensorEntity):
             "charger_missing_entities": c.charger_missing,
             "question_deadline": c.question_deadline.isoformat() if c.question_deadline else None,
             **c.readings,
+            "ev_soc": c.ev_soc_est,
+            "ev_soc_stale": c.soc_stale,
+            "ev_range": c.ev_range,
+            "range_at_target": c.range_at_target,
+            "energy_to_target": c.energy_to_target,
+            "minutes_to_target": c.minutes_to_target,
+            "finish_at": c.finish_at.isoformat() if c.finish_at else None,
+            "departure_time": c.departure_time[:5],
+            "departure_on": c.departure_on,
+            "boost_active": c.boost_active,
+            "capacity_kwh": c.capacity_used,
+            "car": c.car_info,
+            "entity_departure_on": f"switch.{_p(self)}_departure_enabled",
+            "entity_departure_time": f"time.{_p(self)}_departure_time",
+        }
+
+
+def _p(ent: OGEVEntity) -> str:
+    """Entity-id prefix of this integration instance (normally 'ogev')."""
+    oid = ent.entity_id.split(".", 1)[1]
+    return oid[: -len("_status")] if oid.endswith("_status") else "ogev"
+
+
+class EvSocSensor(OGEVEntity, SensorEntity):
+    """Car SOC – OpenCARWINGS reading extrapolated with the charged energy."""
+
+    _attr_device_class = SensorDeviceClass.BATTERY
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 0
+
+    def __init__(self, ctrl: EVChargeController) -> None:
+        super().__init__(ctrl, "ev_soc", "sensor")
+
+    @property
+    def native_value(self) -> float | None:
+        return self.ctrl.ev_soc_est
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        car = self.ctrl.car_info
+        return {
+            "reported_soc": car.get("soc"),
+            "reported_at": car.get("updated"),
+            "estimated": bool(car.get("configured")),
+            "stale": self.ctrl.soc_stale,
+            "capacity_kwh": self.ctrl.capacity_used,
+        }
+
+
+class EvRangeSensor(OGEVEntity, SensorEntity):
+    _attr_device_class = SensorDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
+    _attr_suggested_display_precision = 0
+    _attr_icon = "mdi:map-marker-distance"
+
+    def __init__(self, ctrl: EVChargeController) -> None:
+        super().__init__(ctrl, "ev_range", "sensor")
+
+    @property
+    def native_value(self) -> float | None:
+        return self.ctrl.ev_range
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"range_at_target": self.ctrl.range_at_target}
+
+
+class EnergyToTargetSensor(OGEVEntity, SensorEntity):
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_suggested_display_precision = 1
+    _attr_icon = "mdi:battery-arrow-up"
+
+    def __init__(self, ctrl: EVChargeController) -> None:
+        super().__init__(ctrl, "energy_to_target", "sensor")
+
+    @property
+    def native_value(self) -> float | None:
+        return self.ctrl.energy_to_target
+
+
+class TimeToTargetSensor(OGEVEntity, SensorEntity):
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_suggested_display_precision = 0
+    _attr_icon = "mdi:timer-sand"
+
+    def __init__(self, ctrl: EVChargeController) -> None:
+        super().__init__(ctrl, "time_to_target", "sensor")
+
+    @property
+    def native_value(self) -> float | None:
+        return self.ctrl.minutes_to_target
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        fin = self.ctrl.finish_at
+        return {
+            "finish_at": fin.isoformat() if fin else None,
+            "formatted": format_duration(self.ctrl.minutes_to_target * 60)
+            if self.ctrl.minutes_to_target
+            else None,
         }
 
 

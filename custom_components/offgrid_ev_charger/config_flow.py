@@ -9,14 +9,19 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResu
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
 
+from .carwings import find_cars
 from .const import (
     CONF_BATTERY_POWER,
     CONF_BATTERY_SOC,
+    CONF_CARWINGS_VIN,
     CONF_CHARGER_POWER,
     CONF_CHARGER_POWER_UNIT,
     CONF_CONTROL,
     CONF_CURRENT,
     CONF_EV_SOC,
+    CONF_GRID_POWER,
+    CONF_GRID_STATES,
+    CONF_INVERTER_MODE,
     CONF_NAME,
     CONF_NOTIFY,
     CONF_PLUG,
@@ -24,6 +29,8 @@ from .const import (
     CONF_POWER_SIGN,
     CONF_START_OPTION,
     CONF_STOP_OPTION,
+    CARWINGS_NONE,
+    DEFAULT_GRID_STATES,
     DEFAULT_NAME,
     DEFAULT_PLUG_STATES,
     DEFAULT_START_OPTION,
@@ -44,8 +51,17 @@ def _sv(defaults: dict[str, Any], key: str, fallback: Any = None) -> dict[str, A
     return {"suggested_value": val} if val not in (None, "") else {}
 
 
-def _schema(defaults: dict[str, Any], with_name: bool) -> vol.Schema:
+def _schema(hass: HomeAssistant, defaults: dict[str, Any], with_name: bool) -> vol.Schema:
     fields: dict[Any, Any] = {}
+    cars = find_cars(hass)
+    car_default = defaults.get(CONF_CARWINGS_VIN)
+    if not car_default:
+        car_default = next(iter(cars)) if len(cars) == 1 else CARWINGS_NONE
+    car_options = [selector.SelectOptionDict(value=CARWINGS_NONE, label="—")] + [
+        selector.SelectOptionDict(value=vin, label=label) for vin, label in cars.items()
+    ]
+    if car_default not in (CARWINGS_NONE, *cars):
+        car_options.append(selector.SelectOptionDict(value=car_default, label=f"{car_default} (nem található)"))
     if with_name:
         fields[vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, DEFAULT_NAME))] = str
     fields.update(
@@ -68,6 +84,12 @@ def _schema(defaults: dict[str, Any], with_name: bool) -> vol.Schema:
             vol.Optional(CONF_CHARGER_POWER, description=_sv(defaults, CONF_CHARGER_POWER)): _ent(["sensor"]),
             vol.Required(CONF_CHARGER_POWER_UNIT, default=defaults.get(CONF_CHARGER_POWER_UNIT, "W")): selector.SelectSelector(
                 selector.SelectSelectorConfig(options=["W", "kW"], mode=selector.SelectSelectorMode.LIST)
+            ),
+            vol.Optional(CONF_INVERTER_MODE, description=_sv(defaults, CONF_INVERTER_MODE)): _ent(["sensor", "select", "binary_sensor", "input_select"]),
+            vol.Optional(CONF_GRID_STATES, default=defaults.get(CONF_GRID_STATES, DEFAULT_GRID_STATES)): str,
+            vol.Optional(CONF_GRID_POWER, description=_sv(defaults, CONF_GRID_POWER)): _ent(["sensor"]),
+            vol.Required(CONF_CARWINGS_VIN, default=car_default): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=car_options, mode=selector.SelectSelectorMode.DROPDOWN)
             ),
             vol.Optional(CONF_EV_SOC, description=_sv(defaults, CONF_EV_SOC, "sensor.ev_becsult_soc")): _ent(["sensor", "input_number"]),
             vol.Optional(CONF_NOTIFY, description=_sv(defaults, CONF_NOTIFY)): str,
@@ -114,7 +136,7 @@ class OGEVConfigFlow(ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(title=title, data=data)
         return self.async_show_form(
             step_id="user",
-            data_schema=_schema(user_input or {}, with_name=True),
+            data_schema=_schema(self.hass, user_input or {}, with_name=True),
             errors=errors,
         )
 
@@ -137,6 +159,6 @@ class OGEVOptionsFlow(OptionsFlow):
             current = {**current, **user_input}
         return self.async_show_form(
             step_id="init",
-            data_schema=_schema(current, with_name=False),
+            data_schema=_schema(self.hass, current, with_name=False),
             errors=errors,
         )

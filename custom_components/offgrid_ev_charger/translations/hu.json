@@ -17,10 +17,18 @@
           "plug_states": "„Csatlakoztatva” állapotok (vesszővel)",
           "charger_power": "Töltő teljesítmény szenzor (opcionális)",
           "charger_power_unit": "Töltő teljesítmény mértékegysége",
-          "ev_soc": "Autó SOC szenzor (opcionális)",
+          "inverter_mode": "Inverter üzemmód entitás (opcionális)",
+          "grid_states": "„Hálózaton” állapotok (vesszővel)",
+          "grid_power": "Hálózati (grid) bemenő teljesítmény (opcionális)",
+          "carwings_vin": "OpenCARWINGS autó",
+          "ev_soc": "Autó SOC szenzor (opcionális, ha nincs OpenCARWINGS)",
           "notify_service": "Telefon értesítés szolgáltatás (opcionális)"
         },
         "data_description": {
+          "inverter_mode": "pl. Axpert üzemmód (Line/Battery). Ebből tudja a Gyors mód, hogy az inverter hálózatra váltott.",
+          "grid_states": "binary_sensor esetén írd hozzá: on.",
+          "grid_power": "A hálózatból felvett teljesítmény (W). Hálózaton a Gyors mód ez alatt tartja a korlátot (alap 4000 W). Üzemmód entitás nélkül > 100 W = hálózaton.",
+          "carwings_vin": "Nissan Leaf / e-NV200 az OpenCARWINGS integráción keresztül: töltöttség, hatótáv, frissítés és klíma automatikusan párosítva.",
           "power_sign": "A jelenlegi kódod szerint: pozitív = merül.",
           "plug_states": "Csak sensor esetén: mely állapotai jelentik, hogy az autó csatlakoztatva van.",
           "charger_power": "Nélküle az áramból becsül, és az „autó tele” jelzés nem működik.",
@@ -49,10 +57,18 @@
           "plug_states": "„Csatlakoztatva” állapotok (vesszővel)",
           "charger_power": "Töltő teljesítmény szenzor (opcionális)",
           "charger_power_unit": "Töltő teljesítmény mértékegysége",
-          "ev_soc": "Autó SOC szenzor (opcionális)",
+          "inverter_mode": "Inverter üzemmód entitás (opcionális)",
+          "grid_states": "„Hálózaton” állapotok (vesszővel)",
+          "grid_power": "Hálózati (grid) bemenő teljesítmény (opcionális)",
+          "carwings_vin": "OpenCARWINGS autó",
+          "ev_soc": "Autó SOC szenzor (opcionális, ha nincs OpenCARWINGS)",
           "notify_service": "Telefon értesítés szolgáltatás (opcionális)"
         },
         "data_description": {
+          "inverter_mode": "pl. Axpert üzemmód (Line/Battery). Ebből tudja a Gyors mód, hogy az inverter hálózatra váltott.",
+          "grid_states": "binary_sensor esetén írd hozzá: on.",
+          "grid_power": "A hálózatból felvett teljesítmény (W). Hálózaton a Gyors mód ez alatt tartja a korlátot (alap 4000 W). Üzemmód entitás nélkül > 100 W = hálózaton.",
+          "carwings_vin": "Nissan Leaf / e-NV200 az OpenCARWINGS integráción keresztül: töltöttség, hatótáv, frissítés és klíma automatikusan párosítva.",
           "power_sign": "A jelenlegi kódod szerint: pozitív = merül.",
           "plug_states": "Csak sensor esetén: mely állapotai jelentik, hogy az autó csatlakoztatva van.",
           "charger_power": "Nélküle az áramból becsül, és az „autó tele” jelzés nem működik.",
@@ -83,6 +99,18 @@
       },
       "energy_total": {
         "name": "Energia összesen"
+      },
+      "ev_soc": {
+        "name": "Autó töltöttség"
+      },
+      "ev_range": {
+        "name": "Autó hatótáv"
+      },
+      "energy_to_target": {
+        "name": "Energia a célig"
+      },
+      "time_to_target": {
+        "name": "Idő a célig"
       },
       "energy_session": {
         "name": "Energia alkalom"
@@ -196,8 +224,8 @@
       "fast_min_soc": {
         "name": "Gyors: leállás ház-akku SOC alatt"
       },
-      "trickle_min_soc": {
-        "name": "Csepp: leállás ház-akku SOC alatt"
+      "grid_max_power": {
+        "name": "Hálózat max teljesítmény (Gyors mód hálózaton)"
       },
       "max_battery_discharge": {
         "name": "Max akku merülés (inverter/BMS)"
@@ -216,6 +244,15 @@
       },
       "electricity_price": {
         "name": "Villany ár"
+      },
+      "battery_capacity": {
+        "name": "Autó akku kapacitás"
+      },
+      "charge_efficiency": {
+        "name": "Töltési hatásfok"
+      },
+      "carwings_refresh": {
+        "name": "Autó frissítés töltés közben (0 = ki)"
       }
     },
     "select": {
@@ -233,6 +270,19 @@
     "button": {
       "reset_statistics": {
         "name": "Statisztika nullázása"
+      },
+      "refresh_car": {
+        "name": "Autó adatok frissítése"
+      }
+    },
+    "switch": {
+      "departure_enabled": {
+        "name": "Indulásra kész"
+      }
+    },
+    "time": {
+      "departure_time": {
+        "name": "Indulás ideje"
       }
     }
   }
