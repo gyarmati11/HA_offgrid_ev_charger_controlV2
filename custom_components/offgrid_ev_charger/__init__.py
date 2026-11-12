@@ -35,7 +35,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         await hass.http.async_register_static_paths(
             [StaticPathConfig(CARD_URL, str(path), False)]
         )
-        add_extra_js_url(hass, f"{CARD_URL}?v={version}")
+        url = f"{CARD_URL}?v={version}"
+        add_extra_js_url(hass, url)            # modern frontend
+        add_extra_js_url(hass, url, es5=True)  # legacy frontend (older Android WebView / iOS)
     except Exception as err:  # noqa: BLE001 – the card is optional
         _LOGGER.warning("Could not register the Lovelace card: %s", err)
     return True

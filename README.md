@@ -88,7 +88,7 @@ egy érintéses módválasztó, az aktuális töltés és a napi/heti/havi/éves
 cél töltöttség csúszka, valamint figyelmeztetések (módválasztás visszaszámlálással, hiányzó adat, autó feltöltve).
 Világos és sötét témával, telefonon is működik.
 
-> Ha a kártya frissítés után nem jelenik meg, frissítsd a böngészőt (mobil appban: Beállítások → Companion app → Gyorsítótár ürítése).
+> Ha a kártya frissítés után nem jelenik meg (telefonon „Konfigurációs hiba”), frissítsd a böngészőt (mobil appban: Beállítások → Companion app → Gyorsítótár ürítése).
 
 ## Működési sorrend (prioritás)
 
@@ -103,6 +103,11 @@ Világos és sötét témával, telefonon is működik.
 A Gyors és Csepp mód 5% hiszterézissel indul újra, hogy ne kapcsolgasson a határon.
 
 ## Változások
+
+**1.3.1**
+- Javítva: telefonon (Companion app) a kártya helyén „Konfigurációs hiba” jelent meg. A kártya most a HA régebbi (ES5) felületéhez is regisztrálva van, és ES2017-re fordítva készül, így régebbi Android WebView-n is fut.
+- Színkeverés és keskeny elrendezés tartalék megoldással régebbi böngészőkhöz.
+- A kártya forrása: `card_src/offgrid-ev-card.js`, fordítás: `node card_src/build.js`.
 
 **1.3.0**
 - Csepp mód: a ház-akku töltöttségétől függetlenül tölt (akku adat nélkül is).
