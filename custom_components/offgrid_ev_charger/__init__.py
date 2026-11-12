@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -22,9 +23,8 @@ CARD_URL = f"/{DOMAIN}/{CARD_FILE}"
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Serve the Lovelace card and load it in every dashboard automatically."""
+    """Serve the Lovelace card and register it as a dashboard resource."""
     try:
-        from homeassistant.components.frontend import add_extra_js_url
         from homeassistant.components.http import StaticPathConfig
 
         path = Path(__file__).parent / "www" / CARD_FILE
@@ -35,11 +35,52 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         await hass.http.async_register_static_paths(
             [StaticPathConfig(CARD_URL, str(path), False)]
         )
-        url = f"{CARD_URL}?v={version}"
-        add_extra_js_url(hass, url)            # modern frontend
-        add_extra_js_url(hass, url, es5=True)  # legacy frontend (older Android WebView / iOS)
+        await async_register_card_resource(hass, f"{CARD_URL}?v={version}")
     except Exception as err:  # noqa: BLE001 – the card is optional
         _LOGGER.warning("Could not register the Lovelace card: %s", err)
+    return True
+
+
+async def async_register_card_resource(hass: HomeAssistant, url: str) -> bool:
+    """Add / update the card in the Lovelace resources (like HACS does).
+
+    Lovelace resources are loaded by the dashboard itself, so the card is defined
+    in the element registry the frontend uses – on desktop and in the mobile app.
+    """
+    data: Any = hass.data.get("lovelace")
+    if data is None:
+        _LOGGER.warning("Lovelace is not loaded – add %s as a dashboard resource manually", url)
+        return False
+    resources = getattr(data, "resources", None)
+    if resources is None and isinstance(data, dict):
+        resources = data.get("resources")
+    if resources is None or not hasattr(resources, "async_create_item"):
+        _LOGGER.warning(
+            "Lovelace resources are in YAML mode. Add this to your resources: "
+            "- url: %s  type: module",
+            url,
+        )
+        return False
+    if not getattr(resources, "loaded", True):
+        await resources.async_load()
+        resources.loaded = True
+
+    base = url.split("?", 1)[0]
+    found = False
+    for item in list(resources.async_items() or []):
+        item_url = str(item.get("url", ""))
+        if item_url.split("?", 1)[0] != base:
+            continue
+        if found:  # duplicate entry – remove it
+            await resources.async_delete_item(item["id"])
+            continue
+        found = True
+        if item_url != url or item.get("type") != "module":
+            await resources.async_update_item(item["id"], {"res_type": "module", "url": url})
+            _LOGGER.info("Updated Lovelace resource %s", url)
+    if not found:
+        await resources.async_create_item({"res_type": "module", "url": url})
+        _LOGGER.info("Registered Lovelace resource %s", url)
     return True
 
 

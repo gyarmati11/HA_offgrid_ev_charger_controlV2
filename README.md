@@ -104,6 +104,9 @@ A Gyors és Csepp mód 5% hiszterézissel indul újra, hogy ne kapcsolgasson a h
 
 ## Változások
 
+**1.3.2**
+- Javítva: „Custom element doesn't exist: offgrid-ev-card” (főleg a mobil appban). Az integráció a kártyát most automatikusan **Lovelace erőforrásként** regisztrálja (Beállítások → Irányítópultok → ⋮ → Erőforrások), ahogy a HACS-kártyák is töltődnek. YAML módú erőforrásoknál add hozzá kézzel: `url: /offgrid_ev_charger/offgrid-ev-card.js`, `type: module`.
+
 **1.3.1**
 - Javítva: telefonon (Companion app) a kártya helyén „Konfigurációs hiba” jelent meg. A kártya most a HA régebbi (ES5) felületéhez is regisztrálva van, és ES2017-re fordítva készül, így régebbi Android WebView-n is fut.
 - Színkeverés és keskeny elrendezés tartalék megoldással régebbi böngészőkhöz.

@@ -6,7 +6,7 @@
  *   prefix: ogev          # optional, auto-detected
  *   title: Autótöltés     # optional
  */
-const CARD_VERSION = "1.3.1";
+const CARD_VERSION = "1.3.2";
 
 const MODES = [
   { id: "solar", label: "Szolár", icon: "mdi:solar-power-variant", color: "#F5A524", hint: "csak napelem-felesleg" },
