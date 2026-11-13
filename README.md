@@ -104,6 +104,11 @@ A Gyors és Csepp mód 5% hiszterézissel indul újra, hogy ne kapcsolgasson a h
 
 ## Változások
 
+**1.3.3**
+- A vezérlő hibatűrőbb: az OpenCARWINGS- és a hálózatérzékelés hibája nem állíthatja le a töltésvezérlést; időzóna nélküli autó-időbélyegek kezelése.
+- Belső hiba esetén a kártya állapotsorában megjelenik a pontos hiba (fájl:sor), és a `sensor.ogev_status` `last_error` attribútumában is.
+- 60 mp-es őrfigyelő: egy beragadt kör nem blokkolhatja a vezérlést.
+
 **1.3.2**
 - Javítva: „Custom element doesn't exist: offgrid-ev-card” (főleg a mobil appban). Az integráció a kártyát most automatikusan **Lovelace erőforrásként** regisztrálja (Beállítások → Irányítópultok → ⋮ → Erőforrások), ahogy a HACS-kártyák is töltődnek. YAML módú erőforrásoknál add hozzá kézzel: `url: /offgrid_ev_charger/offgrid-ev-card.js`, `type: module`.
 

@@ -5,6 +5,7 @@ import asyncio
 from datetime import datetime, time as dtime, timedelta
 import logging
 import math
+import traceback
 from typing import Any
 
 from homeassistant.components import persistent_notification
@@ -80,6 +81,13 @@ from .carwings import CarLink, find_cars
 
 _LOGGER = logging.getLogger(__name__)
 
+def _aware(ts: datetime | None) -> datetime | None:
+    """Treat naive timestamps (e.g. from the car API) as UTC."""
+    if ts is not None and ts.tzinfo is None:
+        return ts.replace(tzinfo=dt_util.UTC)
+    return ts
+
+
 TARGET_HYSTERESIS = 2          # % – restart only below target − this
 STALE_SOC_GRACE_MIN = 15       # min – ignore a pre-plug-in SOC reading this long
 
@@ -149,6 +157,7 @@ class EVChargeController:
         self._offline_notified = False
         self.charger_offline = False
         self.charger_missing: list[str] = []
+        self.last_error: str | None = None
 
         # car (OpenCARWINGS) / target / departure
         self.car: CarLink | None = None
@@ -665,9 +674,16 @@ class EVChargeController:
             while self._rerun:
                 self._rerun = False
                 try:
-                    await self._run()
-                except Exception:  # noqa: BLE001
+                    async with asyncio.timeout(60):
+                        await self._run()
+                    self.last_error = None
+                except Exception as err:  # noqa: BLE001
                     _LOGGER.exception("EV charge controller tick failed")
+                    frame = traceback.extract_tb(err.__traceback__)[-1] if err.__traceback__ else None
+                    where = f"{frame.filename.rsplit('/', 1)[-1]}:{frame.lineno} {frame.name}" if frame else ""
+                    self.last_error = f"{type(err).__name__}: {err} @ {where}"[:250]
+                    self.status = f"⚠️ Belső hiba: {self.last_error}"[:255]
+                    self._update()
 
     async def _run(self) -> None:
         cfg = self.cfg
@@ -711,7 +727,11 @@ class EVChargeController:
         else:
             self._missing_since = None
             error = False
-        self._read_grid()
+        try:
+            self._read_grid()
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Grid detection failed")
+            self.on_grid = None
         needs_batt = self._needs_battery()
         if error and not self.data_error:
             await self._notify(
@@ -763,7 +783,10 @@ class EVChargeController:
         self.charger_power = float(max(round(cp), 0))
         self.charging = self.charger_power > CHARGING_THRESHOLD_W
 
-        ev_soc = self._update_car(now, ev_soc)
+        try:
+            ev_soc = self._update_car(now, ev_soc)
+        except Exception:  # noqa: BLE001 – the car link must never stop charging control
+            _LOGGER.exception("OpenCARWINGS update failed")
         plan_soc = ev_soc
         if (
             self.soc_stale
@@ -878,7 +901,10 @@ class EVChargeController:
 
         self.target_current = amps if enable else None
         self.status = msg[:255]
-        await self._maybe_refresh(now)
+        try:
+            await self._maybe_refresh(now)
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("OpenCARWINGS refresh failed")
         self._update()
 
     # ------------------------------------------------------------------
@@ -916,7 +942,7 @@ class EVChargeController:
             a = self.soc_anchor
             est = float(a["soc"]) + (self.total_kwh - float(a["kwh"])) * eff / cap * 100
             est = max(0.0, min(100.0, est))
-            ts = dt_util.parse_datetime(a["ts"]) if a.get("ts") else None
+            ts = _aware(dt_util.parse_datetime(a["ts"])) if a.get("ts") else None
             stale = bool(self._plugged_at and ts and ts < self._plugged_at)
         elif ev_soc_entity is not None:
             est = ev_soc_entity

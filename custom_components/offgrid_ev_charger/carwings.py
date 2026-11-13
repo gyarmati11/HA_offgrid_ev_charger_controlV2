@@ -106,7 +106,12 @@ class CarLink:
         ts: datetime | None = None
         lu = self._state("last_updated")
         if lu is not None:
-            ts = dt_util.parse_datetime(lu.state)
+            try:
+                ts = dt_util.parse_datetime(lu.state)
+            except (TypeError, ValueError):
+                ts = None
+            if ts is not None and ts.tzinfo is None:
+                ts = ts.replace(tzinfo=dt_util.UTC)
         if ts is None and soc_state is not None:
             ts = soc_state.last_updated
         ac = self._state("ac")
